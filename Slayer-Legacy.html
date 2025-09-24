@@ -7,7 +7,7 @@
     <meta name="description"
         content="An evolved 2D Demon Slayer game featuring Hashira assists, dialogue, and advanced combat mechanics.">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
 
         html,
         body {
@@ -20,12 +20,13 @@
             align-items: center;
             justify-content: center;
             height: 100vh;
-            font-family: 'Cinzel', serif;
+            font-family: 'Noto Serif JP', serif;
         }
 
         canvas {
             background-color: #0a0814;
             image-rendering: pixelated;
+            /* Ensures pixel art doesn't look blurry */
             border: 3px solid #302a4d;
             box-shadow: 0 0 15px #c386f1, 0 0 45px #c386f1, inset 0 0 20px rgba(0, 0, 0, 0.5);
         }
@@ -305,7 +306,7 @@
 
     <script>
         // ##################################################################
-        // #                           SETUP                              #
+        // #                            SETUP                             #
         // ##################################################################
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -315,7 +316,55 @@
         canvas.height = GAME_HEIGHT;
 
         // ##################################################################
-        // #                          SYSTEMS                             #
+        // #                        ASSET MANAGER                         #
+        // ##################################################################
+        const assetManager = {
+            images: {},
+            queue: [],
+            successCount: 0,
+            errorCount: 0,
+
+            queueDownload(alias, path) {
+                this.queue.push({ alias, path });
+            },
+
+            downloadAll(callback) {
+                if (this.queue.length === 0) {
+                    callback();
+                    return;
+                }
+                for (let i = 0; i < this.queue.length; i++) {
+                    const { alias, path } = this.queue[i];
+                    const img = new Image();
+                    img.addEventListener("load", () => {
+                        this.successCount++;
+                        if (this.isDone()) {
+                            callback();
+                        }
+                    });
+                    img.addEventListener("error", () => {
+                        this.errorCount++;
+                        console.error(`Failed to load image at path: ${path}`);
+                        if (this.isDone()) {
+                            callback();
+                        }
+                    });
+                    img.src = path;
+                    this.images[alias] = img;
+                }
+            },
+
+            isDone() {
+                return (this.queue.length === this.successCount + this.errorCount);
+            },
+
+            getAsset(alias) {
+                return this.images[alias];
+            }
+        };
+
+        // ##################################################################
+        // #                           SYSTEMS                            #
         // ##################################################################
 
         // --- Audio Engine ---
@@ -454,7 +503,7 @@
             follow(target, level) {
                 let tX = target.x + target.w / 2 - this.width / 2; let tY = target.y + target.h / 2 - this.height / 2;
                 this.x += (tX - this.x) * this.smoothSpeed; this.y += (tY - this.y) * this.smoothSpeed;
-                this.x = Math.max(level.x, Math.min(this.x, level.w - this.width)); this.y = Math.max(level.y, Math.min(this.y, level.h - this.height));
+                this.x = Math.max(0, Math.min(this.x, level.w - this.width)); this.y = Math.max(0, Math.min(this.y, level.h - this.height));
             }
             apply(ctx) { ctx.save(); screenEffects.apply(ctx); ctx.translate(-this.x, -this.y); }
             release(ctx) { ctx.restore(); }
@@ -476,32 +525,92 @@
                 ctx.restore();
             }
         }
+
         class InfinityCastleBackground {
-            constructor() { this.structures = []; this.generateStructures(); }
-            generateStructures() {
-                for (let i = 0; i < 50; i++) { this.structures.push({ x: Math.random() * 4000 - 1000, y: Math.random() * 3000 - 1000, w: Math.random() * 300 + 100, h: Math.random() * 20 + 10, depth: Math.random() * 0.5 + 0.1, angle: Math.random() * Math.PI, color: `rgba(75, 68, 110, ${Math.random() * 0.2 + 0.1})` }); }
-                for (let i = 0; i < 20; i++) { this.structures.push({ x: Math.random() * 4000 - 1000, y: Math.random() * 3000 - 1000, w: Math.random() * 20 + 10, h: Math.random() * 300 + 100, depth: Math.random() * 0.6 + 0.2, angle: Math.random() * Math.PI, color: `rgba(95, 88, 130, ${Math.random() * 0.2 + 0.1})` }); }
+            constructor() {
+                this.layers = {
+                    far: { structures: [], depth: 0.1 },
+                    mid: { structures: [], depth: 0.2 },
+                    near: { structures: [], depth: 0.5 }
+                };
+                this.generateStructures();
             }
-            update(dt) { }
-            draw(ctx, camera) {
-                ctx.save(); ctx.fillStyle = '#0a0814'; ctx.fillRect(camera.x, camera.y, camera.width, camera.height);
-                this.structures.forEach(s => {
-                    const parallaxX = camera.x * s.depth; const parallaxY = camera.y * s.depth;
-                    ctx.save(); ctx.translate(s.x - parallaxX, s.y - parallaxY); ctx.rotate(s.angle);
-                    ctx.fillStyle = s.color; ctx.fillRect(-s.w / 2, -s.h / 2, s.w, s.h);
-                    ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = 1; ctx.strokeRect(-s.w / 2, -s.h / 2, s.w, s.h);
-                    ctx.restore();
-                });
-                ctx.save(); ctx.strokeStyle = "rgba(123, 91, 188, 0.05)"; ctx.lineWidth = 2;
-                ctx.translate(camera.x + camera.width / 2, camera.y + camera.height / 2); ctx.rotate(performance.now() / 50000);
-                const size = 200;
-                for (let i = -10; i < 10; i++) {
-                    ctx.beginPath(); ctx.moveTo(i * size, -10 * size); ctx.lineTo(i * size, 10 * size); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(-10 * size, i * size); ctx.lineTo(10 * size, i * size); ctx.stroke();
+
+            generateStructures() {
+                const worldWidth = 4000;
+                const worldHeight = 3000;
+
+                // Far layer (less detail, more atmospheric)
+                for (let i = 0; i < 40; i++) {
+                    this.layers.far.structures.push({
+                        x: Math.random() * worldWidth - worldWidth / 2,
+                        y: Math.random() * worldHeight - worldHeight / 2,
+                        w: Math.random() * 400 + 200,
+                        h: Math.random() * 20 + 10,
+                        color: `rgba(40, 30, 30, ${Math.random() * 0.3 + 0.2})`,
+                        hasLantern: Math.random() > 0.8
+                    });
                 }
-                ctx.restore(); ctx.restore();
+
+                // Mid layer (more defined structures)
+                for (let i = 0; i < 25; i++) {
+                    this.layers.mid.structures.push({
+                        x: Math.random() * worldWidth - worldWidth / 2,
+                        y: Math.random() * worldHeight - worldHeight / 2,
+                        w: Math.random() * 300 + 150,
+                        h: Math.random() * 30 + 15,
+                        color: 'rgba(30, 20, 20, 0.6)',
+                        hasLantern: Math.random() > 0.6
+                    });
+                }
+
+                // Near layer (most defined, fastest moving)
+                for (let i = 0; i < 15; i++) {
+                    this.layers.near.structures.push({
+                        x: Math.random() * worldWidth - worldWidth / 2,
+                        y: Math.random() * worldHeight - worldHeight / 2,
+                        w: Math.random() * 500 + 300,
+                        h: Math.random() * 40 + 20,
+                        color: 'rgba(20, 10, 10, 0.8)',
+                        hasLantern: Math.random() > 0.5
+                    });
+                }
+            }
+
+            draw(ctx, camera) {
+                // Base atmospheric gradient
+                const grad = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+                grad.addColorStop(0, '#1a0802');
+                grad.addColorStop(1, '#4d2412');
+                ctx.save();
+                ctx.fillStyle = grad;
+                ctx.fillRect(camera.x, camera.y, camera.width, camera.height);
+                ctx.restore();
+
+                ctx.save();
+                for (const layerName in this.layers) {
+                    const layer = this.layers[layerName];
+                    layer.structures.forEach(s => {
+                        const parallaxX = camera.x * layer.depth;
+                        const parallaxY = camera.y * layer.depth;
+
+                        ctx.fillStyle = s.color;
+                        ctx.fillRect(s.x - parallaxX, s.y - parallaxY, s.w, s.h);
+
+                        if (s.hasLantern) {
+                            const lanternX = s.x - parallaxX + (Math.random() * s.w * 0.8) + (s.w * 0.1);
+                            const lanternY = s.y - parallaxY + s.h / 2 - 5;
+                            ctx.fillStyle = `rgba(255, 180, 80, 0.8)`;
+                            ctx.shadowColor = '#ffb450';
+                            ctx.shadowBlur = 15;
+                            ctx.fillRect(lanternX, lanternY, 10, 10);
+                        }
+                    });
+                }
+                ctx.restore();
             }
         }
+
         class Tile {
             constructor(x, y, w, h, type = 'solid') {
                 Object.assign(this, { x, y, w, h, type, initialX: x, initialY: y });
@@ -513,19 +622,20 @@
                 if (this.type === 'moving_v') { this.y += this.vy * dt; if (Math.abs(this.y - this.initialY) > 100) this.vy *= -1; }
             }
             draw(ctx) {
+                // Draw spikes
                 if (this.type === 'spike') {
                     ctx.fillStyle = '#ff4d4d'; ctx.beginPath();
                     for (let i = 0; i < this.w / 16; i++) { ctx.moveTo(this.x + i * 16, this.y + 16); ctx.lineTo(this.x + i * 16 + 8, this.y); ctx.lineTo(this.x + i * 16 + 16, this.y + 16); }
                     ctx.closePath(); ctx.fill();
-                } else {
-                    const gradient = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.h);
-                    gradient.addColorStop(0, '#5a5278'); gradient.addColorStop(1, '#302a4d');
-                    ctx.fillStyle = gradient; ctx.fillRect(this.x, this.y, this.w, this.h);
-                    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    for (let i = 0; i < this.h; i += 10) { ctx.moveTo(this.x, this.y + i); ctx.lineTo(this.x + this.w, this.y + i); }
-                    ctx.stroke();
+                    return;
                 }
+
+                // FIX: Platforms are now visible again.
+                const gradient = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.h);
+                gradient.addColorStop(0, '#5a5278');
+                gradient.addColorStop(1, '#302a4d');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(this.x, this.y, this.w, this.h);
             }
         }
         class Door {
@@ -547,14 +657,13 @@
                 if (this.hashira) this.hashira.room = this;
             }
             update(dt) {
-                this.background.update(dt);
                 this.tiles.forEach(t => t.update(dt));
                 this.healingOrbs.forEach(o => o.update(dt));
                 this.bosses.forEach(b => { if (b.active) b.update(dt, game.player, this.hashira) });
                 if (this.hashira && this.hashira.active) this.hashira.update(dt, game.player, this.getActiveBoss());
             }
             draw(ctx, camera) {
-                this.background.draw(ctx, camera, this);
+                this.background.draw(ctx, camera);
                 this.tiles.forEach(t => t.draw(ctx));
                 this.doors.forEach(d => d.draw(ctx));
                 this.healingOrbs.forEach(o => o.draw(ctx));
@@ -570,11 +679,175 @@
         }
 
         // ##################################################################
-        // #                         ENTITIES                             #
+        // #                        SPRITE RENDERER                       #
+        // ##################################################################
+        const spriteRenderer = {
+            drawTanjiro(ctx, p) {
+                const w = p.w, h = p.h;
+
+                // Uniform
+                ctx.fillStyle = '#28282e';
+                ctx.fillRect(w * 0.2, h * 0.4, w * 0.6, h * 0.6); // Body
+
+                // Haori
+                const isFire = p.currentStyle === 1;
+                const lightCol = isFire ? '#ff7043' : '#31645e';
+                const darkCol = isFire ? '#bf360c' : '#1a1a1a';
+                ctx.fillStyle = lightCol;
+                ctx.fillRect(w * 0.1, h * 0.4, w * 0.8, h * 0.55);
+                ctx.fillStyle = darkCol;
+                for (let i = 0; i < 5; i++) {
+                    for (let j = 0; j < 4; j++) {
+                        if ((i + j) % 2 === 0) {
+                            ctx.fillRect(w * 0.1 + i * w * 0.16, h * 0.4 + j * h * 0.14, w * 0.16, h * 0.14);
+                        }
+                    }
+                }
+
+                // FIX: Draw head and facial features AFTER body, so they appear on top.
+                // Skin (Head)
+                ctx.fillStyle = '#f2d3b8';
+                ctx.fillRect(w * 0.2, h * 0.1, w * 0.6, h * 0.35);
+
+                // Hair
+                ctx.fillStyle = '#3a0e0e';
+                ctx.beginPath();
+                ctx.moveTo(w * 0.05, h * 0.2);
+                ctx.quadraticCurveTo(w * 0.5, -h * 0.1, w * 0.95, h * 0.2);
+                ctx.lineTo(w * 0.9, h * 0.45);
+                ctx.lineTo(w * 0.1, h * 0.45);
+                ctx.closePath();
+                ctx.fill();
+
+                // Scar
+                ctx.fillStyle = '#a8524f';
+                ctx.fillRect(w * 0.25, h * 0.15, w * 0.15, h * 0.05);
+
+                // Eyes
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(w * 0.35, h * 0.25, w * 0.1, h * 0.05);
+                ctx.fillRect(w * 0.55, h * 0.25, w * 0.1, h * 0.05);
+
+                // Earrings
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(w * 0.15, h * 0.3, w * 0.05, h * 0.15);
+                ctx.fillStyle = '#b71c1c';
+                ctx.beginPath(); ctx.arc(w * 0.175, h * 0.4, w * 0.02, 0, Math.PI * 2); ctx.fill();
+            },
+
+            drawGiyu(ctx, h) {
+                const w = h.w, height = h.h;
+                // Uniform
+                ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, height * 0.4, w * 0.6, height * 0.6); // Body
+
+                // Haori - Right side (burgundy)
+                ctx.fillStyle = '#8c2727';
+                ctx.fillRect(w * 0.5, height * 0.4, w * 0.45, height * 0.55);
+                // Haori - Left side (pattern)
+                ctx.fillStyle = '#4caf50'; ctx.fillRect(w * 0.05, height * 0.4, w * 0.45, height * 0.55);
+                ctx.fillStyle = '#ffeb3b'; ctx.fillRect(w * 0.05, height * 0.5, w * 0.45, height * 0.1);
+
+                // Skin & Hair
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, height * 0.1, w * 0.6, height * 0.3); // Head
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3); // Hair
+            },
+
+            drawShinobu(ctx, h) {
+                const w = h.w, height = h.h;
+                // Uniform
+                ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, height * 0.4, w * 0.6, height * 0.6);
+
+                // Haori (Butterfly pattern)
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(w * 0.05, height * 0.4, w * 0.9, height * 0.55);
+                ctx.fillStyle = '#ab47bc';
+                ctx.beginPath(); ctx.moveTo(w * 0.05, height * 0.95); ctx.lineTo(w * 0.5, height * 0.7); ctx.lineTo(w * 0.95, height * 0.95); ctx.fill();
+                ctx.fillStyle = '#4dd0e1';
+                ctx.beginPath(); ctx.moveTo(w * 0.05, height * 0.85); ctx.lineTo(w * 0.5, height * 0.6); ctx.lineTo(w * 0.95, height * 0.85); ctx.fill();
+
+                // Skin & Hair
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, height * 0.1, w * 0.6, height * 0.3); // Head
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3); // Hair
+                ctx.fillStyle = '#6a1b9a'; ctx.fillRect(w * 0.15, height * 0.25, w * 0.7, height * 0.1); // Hair tips
+            },
+
+            drawGyomei(ctx, h) {
+                const w = h.w, height = h.h;
+                // Body (very muscular)
+                ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.05, height * 0.35, w * 0.9, height * 0.65);
+
+                // Happi Coat
+                ctx.fillStyle = '#4e342e'; ctx.fillRect(w * 0.05, height * 0.35, w * 0.9, height * 0.55);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `${height * 0.2}px serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText('南無', w / 2, height * 0.7);
+
+                // Skin & Hair (Larger build)
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3); // Head
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.02, w * 0.8, height * 0.2); // Hair
+
+                // Beads
+                ctx.fillStyle = '#b71c1c';
+                for (let i = 0; i < 5; i++) {
+                    ctx.beginPath(); ctx.arc(w * 0.2 + i * w * 0.15, height * 0.38, w * 0.05, 0, Math.PI * 2); ctx.fill();
+                }
+            },
+
+            drawAkaza(ctx, b) {
+                const w = b.w, h = b.h;
+                // Body
+                ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, h * 0.2, w, h * 0.8);
+                // Tattoos
+                ctx.strokeStyle = '#0077be'; ctx.lineWidth = 2;
+                for (let i = 0; i < 5; i++) {
+                    ctx.beginPath(); ctx.moveTo(0, h * 0.25 + i * h * 0.15); ctx.lineTo(w, h * 0.25 + i * h * 0.15); ctx.stroke();
+                }
+                // Pants
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(w * 0.1, h * 0.7, w * 0.8, h * 0.3);
+                // Hair
+                ctx.fillStyle = '#ff69b4'; ctx.fillRect(0, 0, w, h * 0.3);
+            },
+
+            drawDoma(ctx, b) {
+                const w = b.w, h = b.h;
+                // Top
+                ctx.fillStyle = '#b71c1c'; ctx.fillRect(w * 0.1, h * 0.3, w * 0.8, h * 0.7);
+                // Skin
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, h * 0.1, w * 0.6, h * 0.2);
+                // Hair
+                ctx.fillStyle = '#fffde7'; ctx.fillRect(0, 0, w, h * 0.3);
+                // Hat-like thing
+                ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, 0, w * 0.6, h * 0.1);
+            },
+
+            drawKokushibo(ctx, b) {
+                const w = b.w, h = b.h;
+                // Kimono
+                ctx.fillStyle = '#4a148c'; ctx.fillRect(0, h * 0.35, w, h * 0.65);
+                // Hair
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(0, 0, w, h * 0.3); // Main hair
+                ctx.fillRect(w * 0.8, h * 0.2, w * 0.2, h * 0.6); // Ponytail
+                // Skin
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, h * 0.05, w * 0.6, h * 0.3);
+                // Eyes (6 of them)
+                ctx.fillStyle = '#ff1744';
+                ctx.fillRect(w * 0.25, h * 0.15, w * 0.1, h * 0.04);
+                ctx.fillRect(w * 0.45, h * 0.15, w * 0.1, h * 0.04);
+                ctx.fillRect(w * 0.65, h * 0.15, w * 0.1, h * 0.04);
+                ctx.fillRect(w * 0.25, h * 0.22, w * 0.1, h * 0.04);
+                ctx.fillRect(w * 0.45, h * 0.22, w * 0.1, h * 0.04);
+                ctx.fillRect(w * 0.65, h * 0.22, w * 0.1, h * 0.04);
+            }
+        };
+
+        // ##################################################################
+        // #                           ENTITIES                           #
         // ##################################################################
         class Player {
             constructor(x, y) {
-                this.w = 32; this.h = 56;
+                this.w = 48;
+                this.h = 60;
                 this.baseStats = { speed: 280, jumpForce: 700, gravity: 1800, maxHp: 100, maxFocus: 100 };
                 this.reset(x, y);
             }
@@ -732,27 +1005,18 @@
             }
             draw(ctx) {
                 if (this.invulnerableTimer > 0 && Math.floor(this.invulnerableTimer * 10) % 2 === 0) return;
-                ctx.save(); ctx.translate(this.x, this.y);
-                if (this.isParrying) {
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; ctx.beginPath();
-                    ctx.arc(this.w / 2, this.h / 2, this.w, 0, Math.PI * 2); ctx.fill();
+
+                ctx.save();
+                if (this.facing < 0) {
+                    ctx.scale(-1, 1);
+                    ctx.translate(-this.x - this.w, this.y);
+                } else {
+                    ctx.translate(this.x, this.y);
                 }
-                ctx.fillStyle = '#3a3a3a'; ctx.fillRect(4, 16, this.w - 8, this.h - 16);
-                ctx.fillStyle = '#ffffff'; ctx.fillRect(10, this.h - 10, this.w - 20, 10);
-                const haoriColor = this.currentStyle === 0 ? '#006400' : '#4a0e0e';
-                ctx.fillStyle = haoriColor; ctx.fillRect(0, 16, this.w, this.h - 20);
-                ctx.fillStyle = this.currentStyle === 0 ? '#000' : '#2a0808';
-                for (let i = 0; i < 4; i++) { for (let j = 2; j < 6; j++) { if ((i + j) % 2 === 0) ctx.fillRect(i * (this.w / 4), j * (this.h / 7), this.w / 4, this.h / 7); } }
-                ctx.fillStyle = '#ffdab9'; ctx.fillRect(8, 0, 16, 16);
-                ctx.fillStyle = '#8b0000'; ctx.fillRect(6, -4, 20, 14);
-                ctx.fillRect(2, 4, 28, 6); ctx.fillStyle = '#cd5c5c';
-                ctx.fillRect(6, 2, 6, 3);
-                ctx.save(); ctx.translate(this.w / 2, this.h / 2);
-                if (this.activeAttack) ctx.rotate(this.facing * -Math.PI / 4 * (Math.sin(this.activeAttack.timer * 5) * 0.5 + 0.5));
-                const bladeX = this.facing > 0 ? 10 : -50; const handX = this.facing > 0 ? 12 : -12;
-                ctx.fillStyle = '#101010'; ctx.fillRect(handX, 2, 4, 10);
-                ctx.fillStyle = '#000000'; ctx.fillRect(bladeX, 4, 40, 4);
-                ctx.restore(); ctx.restore();
+                // Use the spriteRenderer to draw Tanjiro.
+                // The drawing function will handle the visual difference between styles.
+                spriteRenderer.drawTanjiro(ctx, this);
+                ctx.restore();
             }
         }
 
@@ -761,21 +1025,43 @@
         // ##################################################################
         class Hashira {
             constructor(config) {
-                Object.assign(this, { w: 36, h: 60, vx: 0, vy: 0, x: 0, y: 0, active: false, state: 'idle', stateTimer: 2, ...config });
+                Object.assign(this, { w: 48, h: 64, vx: 0, vy: 0, x: 0, y: 0, active: false, state: 'idle', stateTimer: 2, facing: 1, ...config });
             }
             activate() { this.active = true; this.state = 'idle'; this.stateTimer = 1; }
             reset() { this.active = false; this.x = this.startX; this.y = this.startY; }
             update(dt, player, boss) {
                 if (!this.active || !boss) { this.state = 'idle'; return; }
                 this.stateTimer -= dt;
+
+                if (boss.x > this.x) this.facing = 1;
+                else this.facing = -1;
+
                 if (this.stateTimer <= 0) { this.chooseAction(player, boss); }
                 this.x += this.vx * dt; this.y += this.vy * dt;
             }
             chooseAction(player, boss) { this.state = 'idle'; }
-            draw(ctx) { if (!this.active) return; ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.w, this.h); }
+            draw(ctx) {
+                if (!this.active) return;
+                ctx.save();
+                // Translate and scale for facing direction
+                if (this.facing < 0) {
+                    ctx.scale(-1, 1);
+                    ctx.translate(-this.x - this.w, this.y);
+                } else {
+                    ctx.translate(this.x, this.y);
+                }
+
+                // Call the correct drawing function based on the Hashira's spriteKey
+                switch (this.spriteKey) {
+                    case 'giyu': spriteRenderer.drawGiyu(ctx, this); break;
+                    case 'shinobu': spriteRenderer.drawShinobu(ctx, this); break;
+                    case 'gyomei': spriteRenderer.drawGyomei(ctx, this); break;
+                }
+                ctx.restore();
+            }
         }
         class Giyu extends Hashira {
-            constructor(x, y) { super({ name: "Giyu Tomioka", startX: x, startY: y, color: '#0d47a1' }); }
+            constructor(x, y) { super({ name: "Giyu Tomioka", startX: x, startY: y, color: '#0d47a1', spriteKey: 'giyu' }); }
             chooseAction(player, boss) {
                 const distance = Math.hypot(this.x - boss.x, this.y - boss.y); const action = Math.random();
                 if (action < 0.6 && distance > 100) {
@@ -791,18 +1077,9 @@
                     this.state = 'defending'; this.stateTimer = 2.0; this.vx = 0;
                 }
             }
-            draw(ctx) {
-                if (!this.active) return;
-                ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.w, this.h);
-                ctx.fillStyle = '#b71c1c'; ctx.fillRect(this.x + this.w / 2, this.y, this.w / 2, this.h);
-                if (this.state === 'defending') {
-                    ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 3; ctx.beginPath();
-                    ctx.arc(this.x + this.w / 2, this.y + this.h / 2, 50, 0, Math.PI * 2); ctx.stroke();
-                }
-            }
         }
         class Shinobu extends Hashira {
-            constructor(x, y) { super({ name: "Shinobu Kocho", startX: x, startY: y, color: '#6a1b9a' }); }
+            constructor(x, y) { super({ name: "Shinobu Kocho", startX: x, startY: y, color: '#6a1b9a', spriteKey: 'shinobu' }); }
             chooseAction(player, boss) {
                 const action = Math.random();
                 if (action < 0.7) {
@@ -820,14 +1097,9 @@
                     this.vx = Math.cos(angle) * 300; this.vy = Math.sin(angle) * 300;
                 }
             }
-            draw(ctx) {
-                if (!this.active) return;
-                ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.w, this.h);
-                ctx.fillStyle = '#00acc1'; ctx.fillRect(this.x, this.y, this.w, 10);
-            }
         }
         class Gyomei extends Hashira {
-            constructor(x, y) { super({ name: "Gyomei Himejima", startX: x, startY: y, w: 48, h: 70, color: '#4e342e' }); }
+            constructor(x, y) { super({ name: "Gyomei Himejima", startX: x, startY: y, w: 56, h: 72, color: '#4e342e', spriteKey: 'gyomei' }); }
             chooseAction(player, boss) {
                 const action = Math.random();
                 if (action < 0.6) {
@@ -843,24 +1115,22 @@
                     const angle = Math.atan2(boss.y - this.y, boss.x - this.x); this.vx = Math.cos(angle) * 100;
                 }
             }
-            draw(ctx) {
-                if (!this.active) return;
-                ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.w, this.h);
-                ctx.fillStyle = '#4caf50'; ctx.beginPath();
-                ctx.arc(this.x + this.w / 2, this.y - 10, 20, 0, Math.PI * 2); ctx.fill();
-            }
         }
 
         // ##################################################################
-        // #                          BOSSES                              #
+        // #                            BOSSES                            #
         // ##################################################################
         class Boss {
-            constructor(config) { Object.assign(this, { w: 64, h: 80, invulnerableTimer: 0, poisonTimer: 0, poisonDps: 0, ...config }); }
+            constructor(config) { Object.assign(this, { w: 64, h: 80, facing: 1, invulnerableTimer: 0, poisonTimer: 0, poisonDps: 0, ...config }); }
             activate() { this.active = true; this.state = 'idle'; this.timer = 2; }
             update(dt, player) {
                 if (!this.active || this.hp <= 0) return;
                 if (this.invulnerableTimer > 0) this.invulnerableTimer -= dt;
                 if (this.poisonTimer > 0) { this.poisonTimer -= dt; this.hp -= this.poisonDps * dt; }
+
+                // Update facing direction
+                if (player.x + player.w / 2 > this.x + this.w / 2) { this.facing = 1; } else { this.facing = -1; }
+
                 this.updatePhases(); this.timer -= dt;
                 if (this.state === 'transition' && this.timer <= 0) this.state = 'idle';
                 if (this.state !== 'transition' && this.timer <= 0) this.chooseAction(player);
@@ -886,19 +1156,33 @@
             draw(ctx) {
                 if (!this.active) return;
                 if (this.invulnerableTimer > 0 && Math.floor(this.invulnerableTimer * 20) % 2 === 0) return;
+
                 ctx.save();
-                if (this.state === 'telegraph') { ctx.globalAlpha = 0.5 + Math.sin(performance.now() / 100) * 0.5; ctx.shadowColor = '#fff'; ctx.shadowBlur = 20; }
-                if (this.poisonTimer > 0) ctx.filter = 'sepia(100%) hue-rotate(240deg) saturate(3)';
-                let color = this.color;
-                if (this.phase === 2) color = this.p2Color;
-                if (this.phase === 3) color = this.p3Color;
-                ctx.fillStyle = color; ctx.fillRect(this.x, this.y, this.w, this.h);
-                this.drawDetails(ctx); ctx.restore();
+                if (this.state === 'telegraph') { ctx.globalAlpha = 0.5 + Math.sin(performance.now() / 100) * 0.5; }
+                if (this.poisonTimer > 0) { ctx.filter = 'sepia(100%) hue-rotate(240deg) saturate(3)'; }
+
+                ctx.save();
+                // Translate and scale for facing direction
+                if (this.facing < 0) {
+                    ctx.scale(-1, 1);
+                    ctx.translate(-this.x - this.w, this.y);
+                } else {
+                    ctx.translate(this.x, this.y);
+                }
+
+                // Call the correct drawing function based on the boss's spriteKey
+                switch (this.spriteKey) {
+                    case 'akaza': spriteRenderer.drawAkaza(ctx, this); break;
+                    case 'doma': spriteRenderer.drawDoma(ctx, this); break;
+                    case 'kokushibo': spriteRenderer.drawKokushibo(ctx, this); break;
+                }
+                ctx.restore(); // Restore transform
+
+                ctx.restore(); // Restore filters etc.
             }
-            drawDetails(ctx) { }
         }
         class Akaza extends Boss {
-            constructor(x, y) { super({ name: "Akaza, Upper Moon 3", maxHp: 150, startX: x, startY: y, w: 64, h: 80, color: '#d43d81', p2Color: '#f55f9f', p3Color: '#ff8ac7', particleColor: '#ff69b4' }); }
+            constructor(x, y) { super({ name: "Akaza, Upper Moon 3", spriteKey: 'akaza', maxHp: 150, startX: x, startY: y, w: 64, h: 80, color: '#d43d81', p2Color: '#f55f9f', p3Color: '#ff8ac7', particleColor: '#ff69b4' }); }
             updatePhases() {
                 if (this.hp < this.maxHp * 0.66 && this.phase === 1) { this.phase = 2; this.state = 'transition'; this.timer = 1.5; screenEffects.shake(0.5, 15); }
                 else if (this.hp < this.maxHp * 0.33 && this.phase === 2) { this.phase = 3; this.state = 'transition'; this.timer = 1.5; screenEffects.shake(0.8, 20); }
@@ -914,18 +1198,9 @@
             telegraphDash(p, s) { this.state = 'telegraph'; this.timer = 0.6; const dx = p.x - this.x, dy = p.y - this.y, mag = Math.hypot(dx, dy) || 1; this.vx = (dx / mag) * s; this.vy = (dy / mag) * s; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'dash'; this.timer = 0.5; } }, 600); }
             telegraphJump(p) { this.state = 'telegraph'; this.timer = 0.8; this.targetX = p.x; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'airborne'; this.x = this.targetX; this.y = p.y - 100; this.timer = 0.5; setTimeout(() => { if (this.hp > 0 && this.active) this.state = 'idle'; }, 500); } }, 800); }
             shockwave() { this.state = 'telegraph'; this.timer = 1.0; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h, count: 50, color: '#ff69b4', speed: 400, size: 5, lifetime: 1.0, glow: true }); screenEffects.shake(0.3, 10); if (game.player.onGround && game.currentRoom === this.room) game.player.takeDamage(20); } }, 1000); }
-            drawDetails(ctx) {
-                ctx.fillStyle = '#ffc0cb'; ctx.fillRect(this.x + 12, this.y - 10, this.w - 24, 12); ctx.fillStyle = '#00008b'; ctx.fillRect(this.x + 10, this.y + 20, 4, 40); ctx.fillRect(this.x + this.w - 14, this.y + 20, 4, 40);
-                if (this.active && (this.state === 'idle' || this.state === 'telegraph')) {
-                    ctx.save(); ctx.translate(this.x + this.w / 2, this.y + this.h);
-                    ctx.strokeStyle = '#4dd0e1'; ctx.lineWidth = 2; ctx.globalAlpha = 0.6;
-                    for (let i = 0; i < 12; i++) { ctx.rotate(Math.PI / 6); ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(0, 50); ctx.stroke(); }
-                    ctx.restore();
-                }
-            }
         }
         class Doma extends Boss {
-            constructor(x, y) { super({ name: "Doma, Upper Moon 2", maxHp: 200, startX: x, startY: y, w: 70, h: 85, color: '#a0d2eb', p2Color: '#4d80e4', p3Color: '#82eefd', particleColor: '#a0d2eb' }); }
+            constructor(x, y) { super({ name: "Doma, Upper Moon 2", spriteKey: 'doma', maxHp: 200, startX: x, startY: y, w: 70, h: 85, color: '#a0d2eb', p2Color: '#4d80e4', p3Color: '#82eefd', particleColor: '#a0d2eb' }); }
             updatePhases() { if (this.hp < this.maxHp * 0.5 && this.phase === 1) { this.phase = 2; this.state = 'transition'; this.timer = 2; screenEffects.shake(0.6, 15); } }
             chooseAction(p) {
                 let a = Math.random();
@@ -933,13 +1208,12 @@
                 else { if (a < 0.4) this.iceShards(p, 10); else if (a < 0.7) this.teleport(p); else this.freezingCloud(); }
             }
             teleport(p) { this.state = 'telegraph'; this.timer = 0.5; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 30, color: '#a0d2eb', speed: 200, size: 5, lifetime: 0.5, glow: true }); setTimeout(() => { if (this.hp > 0 && this.active) { this.x = p.x + (Math.random() > 0.5 ? -200 : 200); this.y = p.y - 50; this.state = 'idle'; this.timer = 1.0; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 30, color: '#a0d2eb', speed: 200, size: 5, lifetime: 0.5, glow: true }); } }, 500); }
-            iceShards(p, count = 5) { this.state = 'telegraph'; this.timer = 1.2; audio.playSound('skill_ice'); setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 1.5; for (let i = 0; i < count; i++) { setTimeout(() => { if (!this.active) return; const ang = Math.atan2(p.y - this.y, p.x - this.x); game.projectiles.push(new Projectile(this.x + this.w / 2, this.y + this.h / 2, ang, 400, 10, '#fff', 2.0)); }, i * 100); } } }, 1200); }
-            iceClone() { this.state = 'telegraph'; this.timer = 0.8; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; game.projectiles.push(new IceClone(this.x - 100, this.y, game.player)); } }, 800); }
+            iceShards(p, count = 5) { this.state = 'telegraph'; this.timer = 1.2; audio.playSound('skill_ice'); setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 1.5; for (let i = 0; i < count; i++) { setTimeout(() => { if (!this.active) return; const proj = projectilePool.get(); if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, Math.atan2(game.player.y - this.y, game.player.x - this.x), 400, 10, '#fff', 2.0); }, i * 100); } } }, 1200); }
+            iceClone() { this.state = 'telegraph'; this.timer = 0.8; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; const proj = projectilePool.get(); if (proj) proj.activate(this.x - 100, this.y, 0, 0, 15, '#a0d2eb', 3.0, false, true); } }, 800); }
             freezingCloud() { this.state = 'telegraph'; this.timer = 1.5; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 3.0; screenEffects.shake(0.4, 10); particleManager.spawn({ x: GAME_WIDTH / 2, y: 600, count: 200, color: '#e0f7fa', speed: 50, size: 8, lifetime: 3, angle: -Math.PI / 2, spread: Math.PI / 4, gravity: -100, glow: true }); const attackInterval = setInterval(() => { if (!this.active || game.player.hp <= 0) { clearInterval(attackInterval); return; } if (game.player.onGround && game.currentRoom === this.room) game.player.takeDamage(5); }, 200); setTimeout(() => clearInterval(attackInterval), 3000); } }, 1500); }
-            drawDetails(ctx) { ctx.fillStyle = '#f0e68c'; ctx.fillRect(this.x + 20, this.y - 12, this.w - 40, 14); }
         }
         class Kokushibo extends Boss {
-            constructor(x, y) { super({ name: "Kokushibo, Upper Moon 1", maxHp: 250, startX: x, startY: y, w: 60, h: 90, color: '#4a148c', p2Color: '#7b1fa2', p3Color: '#9c27b0', particleColor: '#ce93d8' }); }
+            constructor(x, y) { super({ name: "Kokushibo, Upper Moon 1", spriteKey: 'kokushibo', maxHp: 250, startX: x, startY: y, w: 60, h: 90, color: '#4a148c', p2Color: '#7b1fa2', p3Color: '#9c27b0', particleColor: '#ce93d8' }); }
             updatePhases() {
                 if (this.hp < this.maxHp * 0.7 && this.phase === 1) { this.phase = 2; this.state = 'transition'; this.timer = 1.5; screenEffects.shake(0.7, 18); }
                 else if (this.hp < this.maxHp * 0.4 && this.phase === 2) { this.phase = 3; this.state = 'transition'; this.timer = 1.5; screenEffects.shake(1.0, 22); }
@@ -951,26 +1225,79 @@
                 else { if (a < 0.4) this.multiSlash(p); else if (a < 0.8) this.moonVortex(); else this.teleport(p); }
             }
             teleport(p) { this.state = 'telegraph'; this.timer = 0.3; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 20, color: this.particleColor, speed: 300, size: 4, lifetime: 0.3, glow: true }); setTimeout(() => { if (this.hp > 0 && this.active) { this.x = p.facing > 0 ? p.x - 150 : p.x + 150; this.y = p.y; this.state = 'idle'; this.timer = 0.5; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 20, color: this.particleColor, speed: 300, size: 4, lifetime: 0.3, glow: true }); } }, 300); }
-            moonSlash(p, count = 1) { this.state = 'telegraph'; this.timer = 0.8; audio.playSound('skill_moon'); setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 1.2; for (let i = 0; i < count; i++) { setTimeout(() => { if (!this.active) return; const ang = Math.atan2(p.y - this.y, p.x - this.x); game.projectiles.push(new Projectile(this.x + this.w / 2, this.y + this.h / 2, ang, 600, 20, this.particleColor, 1.5, true)); }, i * 200); } } }, 800); }
-            multiSlash(p) { this.state = 'telegraph'; this.timer = 1.0; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; let ang = Math.atan2(p.y - this.y, p.x - this.x); for (let i = -2; i <= 2; i++) { game.projectiles.push(new Projectile(this.x + this.w / 2, this.y + this.h / 2, ang + i * 0.2, 500, 15, this.particleColor, 1.8, true)); } } }, 1000); }
-            moonVortex() { this.state = 'telegraph'; this.timer = 1.2; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 3.0; screenEffects.shake(0.8, 20); for (let i = 0; i < 16; i++) { game.projectiles.push(new Projectile(this.x + this.w / 2, this.y + this.h / 2, (i / 16) * Math.PI * 2, 400, 25, this.particleColor, 2.5, true)); } } }, 1200); }
-            drawDetails(ctx) { ctx.fillStyle = '#212121'; ctx.fillRect(this.x + 15, this.y - 15, this.w - 30, 18); ctx.fillStyle = '#ffeb3b'; for (let i = 0; i < 3; i++) { ctx.fillRect(this.x + 10 + (i * 15), this.y + 10, 8, 8); ctx.fillRect(this.x + 10 + (i * 15), this.y + 25, 8, 8); } }
+            moonSlash(p, count = 1) { this.state = 'telegraph'; this.timer = 0.8; audio.playSound('skill_moon'); setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 1.2; for (let i = 0; i < count; i++) { setTimeout(() => { if (!this.active) return; const ang = Math.atan2(p.y - this.y, p.x - this.x); const proj = projectilePool.get(); if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, ang, 600, 20, this.particleColor, 1.5, true); }, i * 200); } } }, 800); }
+            multiSlash(p) { this.state = 'telegraph'; this.timer = 1.0; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; let ang = Math.atan2(p.y - this.y, p.x - this.x); for (let i = -2; i <= 2; i++) { const proj = projectilePool.get(); if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, ang + i * 0.2, 500, 15, this.particleColor, 1.8, true); } } }, 1000); }
+            moonVortex() {
+                this.state = 'telegraph'; this.timer = 1.2;
+                setTimeout(() => {
+                    if (this.hp > 0 && this.active) {
+                        this.state = 'idle'; this.timer = 3.0; screenEffects.shake(0.8, 20);
+                        for (let i = 0; i < 16; i++) {
+                            const proj = projectilePool.get();
+                            if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, (i / 16) * Math.PI * 2, 400, 25, this.particleColor, 2.5, true);
+                        }
+                    }
+                }, 1200);
+            }
         }
 
         // ##################################################################
-        // #                       PROJECTILES                            #
+        // #                   PROJECTILES & OBJECT POOL                  #
         // ##################################################################
         class Projectile {
-            constructor(x, y, angle, speed, damage, color, lifetime, isCrescent = false) {
-                Object.assign(this, { x, y, damage, color, lifetime, isCrescent, age: 0 });
-                this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+            constructor() {
+                this.active = false;
             }
-            update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; this.age += dt; if (this.collidesWith(game.player)) { game.player.takeDamage(this.damage); this.lifetime = 0; } }
+            activate(x, y, angle, speed, damage, color, lifetime, isCrescent = false, isClone = false) {
+                Object.assign(this, { x, y, damage, color, lifetime, isCrescent, isClone, age: 0, active: true });
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                if (isClone) {
+                    this.w = 70; this.h = 85; this.state = 'idle'; this.stateTimer = 1.0;
+                }
+            }
+            update(dt) {
+                if (!this.active) return;
+                this.age += dt;
+
+                if (this.isClone) {
+                    this.stateTimer -= dt;
+                    if (this.stateTimer <= 0 && this.state === 'idle') {
+                        this.state = 'attacking';
+                        const angle = Math.atan2(game.player.y - this.y, game.player.x - this.x);
+                        this.vx = Math.cos(angle) * 300;
+                        this.vy = Math.sin(angle) * 300;
+                        this.stateTimer = 0.5;
+                    }
+                }
+
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                if (this.collidesWith(game.player)) {
+                    game.player.takeDamage(this.damage);
+                    this.active = false; // Deactivate on hit
+                }
+
+                if (this.isDead()) {
+                    this.active = false; // Deactivate when lifetime ends
+                }
+            }
             isDead() { return this.age >= this.lifetime; }
-            collidesWith(e) { return this.x > e.x && this.x < e.x + e.w && this.y > e.y && this.y < e.y + e.h; }
+            collidesWith(e) {
+                const effectiveWidth = this.isClone ? this.w : 8;
+                const effectiveHeight = this.isClone ? this.h : 8;
+                return this.x < e.x + e.w && this.x + effectiveWidth > e.x && this.y < e.y + e.h && this.y + effectiveHeight > e.y;
+            }
             draw(ctx) {
-                ctx.save(); ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillStyle = this.color;
-                if (this.isCrescent) {
+                if (!this.active) return;
+                ctx.save();
+                ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillStyle = this.color;
+
+                if (this.isClone) {
+                    ctx.globalAlpha = 0.6 * (1 - this.age / this.lifetime);
+                    ctx.fillRect(this.x, this.y, this.w, this.h);
+                } else if (this.isCrescent) {
                     ctx.beginPath(); const angle = Math.atan2(this.vy, this.vx);
                     ctx.translate(this.x, this.y); ctx.rotate(angle); ctx.scale(1.5, 1);
                     ctx.arc(0, 0, 15, -Math.PI / 2, Math.PI / 2);
@@ -982,34 +1309,34 @@
                 ctx.restore();
             }
         }
-        class IceClone extends Projectile {
-            constructor(x, y, player) {
-                super(x, y, 0, 0, 15, '#a0d2eb', 3.0);
-                this.w = 70; this.h = 85; this.state = 'idle'; this.stateTimer = 1.0; this.target = player;
-            }
-            update(dt) {
-                this.age += dt; this.stateTimer -= dt;
-                if (this.stateTimer <= 0 && this.state === 'idle') {
-                    this.state = 'attacking'; const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-                    this.vx = Math.cos(angle) * 300; this.vy = Math.sin(angle) * 300; this.stateTimer = 0.5;
+
+        const projectilePool = {
+            pool: [],
+            maxSize: 50,
+
+            init() {
+                for (let i = 0; i < this.maxSize; i++) {
+                    this.pool.push(new Projectile());
                 }
-                this.x += this.vx * dt; this.y += this.vy * dt;
-                if (this.collidesWith(this.target)) { this.target.takeDamage(this.damage); this.lifetime = 0; }
+            },
+
+            get() {
+                for (let i = 0; i < this.maxSize; i++) {
+                    if (!this.pool[i].active) {
+                        return this.pool[i];
+                    }
+                }
+                console.warn("Projectile pool is full!");
+                return null;
             }
-            collidesWith(e) { return this.x < e.x + e.w && this.x + this.w > e.x && this.y < e.y + e.h && this.y + this.h > e.y; }
-            draw(ctx) {
-                ctx.save(); ctx.globalAlpha = 0.6 * (1 - this.age / 3.0);
-                ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.w, this.h);
-                ctx.restore();
-            }
-        }
+        };
 
         // ##################################################################
         // #                         GAME LOGIC                           #
         // ##################################################################
         const game = {
             state: 'start', player: new Player(150, 500), camera: new Camera(GAME_WIDTH, GAME_HEIGHT),
-            rooms: [], projectiles: [], currentRoomIndex: 0, hitStop: 0, bossesDefeated: 0,
+            rooms: [], currentRoomIndex: 0, hitStop: 0, bossesDefeated: 0,
             init() {
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 1280, 70), new Tile(400, 500, 150, 20), new Tile(700, 400, 150, 20), new Tile(100, 300, 200, 20),], doors: [new Door(1200, 550, 80, 100, 1, 100, 550)], }));
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 400, 70), new Tile(880, 650, 400, 70), new Tile(400, 650, 480, 16, 'spike'), new Tile(600, 500, 80, 20, 'moving_h'), new Tile(300, 350, 150, 20), new Tile(850, 350, 150, 20), new Tile(0, 0, 20, 720), new Tile(1260, 0, 20, 720),], doors: [new Door(0, 550, 80, 100, 0, 1100, 550), new Door(1200, 250, 80, 100, 2, 100, 550),], healingOrbs: [new HealingOrb(620, 450)] }));
@@ -1019,13 +1346,21 @@
                 this.rooms.push(new Room({ w: 1920, h: 720, tiles: [new Tile(0, 650, 1920, 70), new Tile(0, 0, 20, 720), new Tile(1900, 0, 20, 720), new Tile(300, 500, 100, 20, 'moving_h'), new Tile(600, 400, 150, 16, 'spike'), new Tile(600, 380, 150, 20), new Tile(900, 250, 100, 20, 'moving_v'), new Tile(1200, 400, 150, 20), new Tile(1500, 500, 100, 20, 'moving_h'),], doors: [new Door(0, 550, 80, 100, 4, 1100, 550), new Door(1820, 550, 80, 100, 6, 100, 560)], healingOrbs: [new HealingOrb(1000, 200)] }));
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 1280, 70), new Tile(0, 0, 20, 720), new Tile(1260, 0, 20, 720),], bosses: [new Kokushibo(900, 560)], hashira: new Gyomei(200, 580) }));
                 this.currentRoom = this.rooms[this.currentRoomIndex];
+                projectilePool.init();
             },
             reset() {
                 this.player.reset(150, 500); this.rooms.forEach(r => r.reset());
-                this.projectiles = []; this.currentRoomIndex = 0;
+                projectilePool.pool.forEach(p => p.active = false);
+                this.currentRoomIndex = 0;
                 this.currentRoom = this.rooms[0]; this.bossesDefeated = 0;
             },
             setState(newState) {
+                if (newState === 'gameOver' || newState === 'victory') {
+                    if (gameLoopId) {
+                        cancelAnimationFrame(gameLoopId);
+                        gameLoopId = null;
+                    }
+                }
                 this.state = newState;
                 document.getElementById('start-screen').style.display = (newState === 'start') ? 'flex' : 'none';
                 document.getElementById('game-over-screen').style.display = (newState === 'gameOver') ? 'flex' : 'none';
@@ -1060,7 +1395,8 @@
                 this.camera.follow(this.player, this.currentRoom);
                 particleManager.update(dt);
                 screenEffects.update(dt);
-                for (let i = this.projectiles.length - 1; i >= 0; i--) { this.projectiles[i].update(dt); if (this.projectiles[i].isDead()) this.projectiles.splice(i, 1); }
+                projectilePool.pool.forEach(p => p.update(dt));
+
                 for (let i = this.currentRoom.healingOrbs.length - 1; i >= 0; i--) {
                     const orb = this.currentRoom.healingOrbs[i];
                     if (orb.active && this.player.x < orb.x + orb.w && this.player.x + this.player.w > orb.x && this.player.y < orb.y + orb.h && this.player.y + this.player.h > orb.y) {
@@ -1074,7 +1410,7 @@
                         this.currentRoomIndex = d.toRoom;
                         this.currentRoom = this.rooms[this.currentRoomIndex];
                         this.player.x = d.entryX; this.player.y = d.entryY;
-                        this.projectiles = [];
+                        projectilePool.pool.forEach(p => p.active = false);
                         const bossToActivate = this.currentRoom.bosses.find(b => !b.active && b.hp > 0);
                         if (bossToActivate) { this.startBossEncounter(); }
                     }
@@ -1105,7 +1441,7 @@
                 ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
                 this.camera.apply(ctx);
                 this.currentRoom.draw(ctx, this.camera);
-                this.projectiles.forEach(p => p.draw(ctx));
+                projectilePool.pool.forEach(p => { if (p.active) p.draw(ctx) });
                 this.player.draw(ctx);
                 particleManager.draw(ctx);
                 this.camera.release(ctx);
@@ -1145,9 +1481,11 @@
         };
 
         // ##################################################################
-        // #                         MAIN LOOP                            #
+        // #                          MAIN LOOP                           #
         // ##################################################################
         let lastTime = 0;
+        let gameLoopId = null;
+
         function loop(timestamp) {
             const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
             lastTime = timestamp;
@@ -1155,20 +1493,40 @@
                 game.update(dt);
             }
             game.draw();
-            requestAnimationFrame(loop);
+            gameLoopId = requestAnimationFrame(loop);
         }
+
         document.getElementById('start-screen').addEventListener('click', () => {
-            audio.init(); game.reset(); game.setState('playing');
-            lastTime = performance.now();
+            if (assetManager.isDone() && !gameLoopId) {
+                audio.init();
+                game.reset();
+                game.setState('playing');
+                lastTime = performance.now();
+                gameLoopId = requestAnimationFrame(loop);
+            }
         });
         document.getElementById('game-over-screen').addEventListener('click', () => {
-            game.reset(); game.setState('playing');
+            if (!gameLoopId) {
+                game.reset();
+                game.setState('playing');
+                lastTime = performance.now();
+                gameLoopId = requestAnimationFrame(loop);
+            }
         });
         document.getElementById('victory-screen').addEventListener('click', () => {
-            game.reset(); game.setState('playing');
+            if (!gameLoopId) {
+                game.reset();
+                game.setState('playing');
+                lastTime = performance.now();
+                gameLoopId = requestAnimationFrame(loop);
+            }
         });
-        game.init();
-        requestAnimationFrame(loop);
+
+        // --- GAME START SEQUENCE ---
+        assetManager.downloadAll(() => {
+            game.init();
+            game.setState('start');
+        });
     </script>
 </body>
 
