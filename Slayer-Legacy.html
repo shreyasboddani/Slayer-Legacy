@@ -486,6 +486,7 @@
             end() {
                 this.isActive = false; this.dialogueBox.style.display = 'none';
                 this.dialogueBox.onclick = null; game.state = 'playing';
+                console.log('Dialogue ended — state set to', game.state);
             }
         };
 
@@ -630,7 +631,7 @@
                     return;
                 }
 
-                // FIX: Platforms are now visible again.
+                // Platforms are now visible again.
                 const gradient = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.h);
                 gradient.addColorStop(0, '#5a5278');
                 gradient.addColorStop(1, '#302a4d');
@@ -659,7 +660,18 @@
             update(dt) {
                 this.tiles.forEach(t => t.update(dt));
                 this.healingOrbs.forEach(o => o.update(dt));
-                this.bosses.forEach(b => { if (b.active) b.update(dt, game.player, this.hashira) });
+                // Call the boss update method with only the arguments it's defined to accept.
+                for (let i = 0; i < this.bosses.length; i++) {
+                    const b = this.bosses[i];
+                    if (!b || !b.active) continue;
+                    try {
+                        b.update(dt, game.player);
+                    } catch (e) {
+                        console.error('Error updating boss', b && b.name, e);
+                        // Safely deactivate boss to avoid repeated crashes
+                        try { b.active = false; } catch (ee) { }
+                    }
+                }
                 if (this.hashira && this.hashira.active) this.hashira.update(dt, game.player, this.getActiveBoss());
             }
             draw(ctx, camera) {
@@ -704,7 +716,6 @@
                     }
                 }
 
-                // FIX: Draw head and facial features AFTER body, so they appear on top.
                 // Skin (Head)
                 ctx.fillStyle = '#f2d3b8';
                 ctx.fillRect(w * 0.2, h * 0.1, w * 0.6, h * 0.35);
@@ -714,8 +725,8 @@
                 ctx.beginPath();
                 ctx.moveTo(w * 0.05, h * 0.2);
                 ctx.quadraticCurveTo(w * 0.5, -h * 0.1, w * 0.95, h * 0.2);
-                ctx.lineTo(w * 0.9, h * 0.45);
-                ctx.lineTo(w * 0.1, h * 0.45);
+                ctx.lineTo(w * 0.9, h * 0.3);
+                ctx.lineTo(w * 0.1, h * 0.3);
                 ctx.closePath();
                 ctx.fill();
 
@@ -1013,8 +1024,6 @@
                 } else {
                     ctx.translate(this.x, this.y);
                 }
-                // Use the spriteRenderer to draw Tanjiro.
-                // The drawing function will handle the visual difference between styles.
                 spriteRenderer.drawTanjiro(ctx, this);
                 ctx.restore();
             }
@@ -1043,7 +1052,6 @@
             draw(ctx) {
                 if (!this.active) return;
                 ctx.save();
-                // Translate and scale for facing direction
                 if (this.facing < 0) {
                     ctx.scale(-1, 1);
                     ctx.translate(-this.x - this.w, this.y);
@@ -1051,7 +1059,6 @@
                     ctx.translate(this.x, this.y);
                 }
 
-                // Call the correct drawing function based on the Hashira's spriteKey
                 switch (this.spriteKey) {
                     case 'giyu': spriteRenderer.drawGiyu(ctx, this); break;
                     case 'shinobu': spriteRenderer.drawShinobu(ctx, this); break;
@@ -1112,7 +1119,8 @@
                     }, 1000);
                 } else {
                     this.state = 'moving'; this.stateTimer = 2.0;
-                    const angle = Math.atan2(boss.y - this.y, boss.x - this.x); this.vx = Math.cos(angle) * 100;
+                    const angle = Math.atan2(boss.y - this.y, boss.x - this.x);
+                    this.vx = Math.cos(angle) * 100;
                 }
             }
         }
@@ -1123,12 +1131,12 @@
         class Boss {
             constructor(config) { Object.assign(this, { w: 64, h: 80, facing: 1, invulnerableTimer: 0, poisonTimer: 0, poisonDps: 0, ...config }); }
             activate() { this.active = true; this.state = 'idle'; this.timer = 2; }
+
             update(dt, player) {
                 if (!this.active || this.hp <= 0) return;
                 if (this.invulnerableTimer > 0) this.invulnerableTimer -= dt;
                 if (this.poisonTimer > 0) { this.poisonTimer -= dt; this.hp -= this.poisonDps * dt; }
 
-                // Update facing direction
                 if (player.x + player.w / 2 > this.x + this.w / 2) { this.facing = 1; } else { this.facing = -1; }
 
                 this.updatePhases(); this.timer -= dt;
@@ -1162,7 +1170,6 @@
                 if (this.poisonTimer > 0) { ctx.filter = 'sepia(100%) hue-rotate(240deg) saturate(3)'; }
 
                 ctx.save();
-                // Translate and scale for facing direction
                 if (this.facing < 0) {
                     ctx.scale(-1, 1);
                     ctx.translate(-this.x - this.w, this.y);
@@ -1170,15 +1177,14 @@
                     ctx.translate(this.x, this.y);
                 }
 
-                // Call the correct drawing function based on the boss's spriteKey
                 switch (this.spriteKey) {
                     case 'akaza': spriteRenderer.drawAkaza(ctx, this); break;
                     case 'doma': spriteRenderer.drawDoma(ctx, this); break;
                     case 'kokushibo': spriteRenderer.drawKokushibo(ctx, this); break;
                 }
-                ctx.restore(); // Restore transform
+                ctx.restore();
 
-                ctx.restore(); // Restore filters etc.
+                ctx.restore();
             }
         }
         class Akaza extends Boss {
@@ -1212,32 +1218,259 @@
             iceClone() { this.state = 'telegraph'; this.timer = 0.8; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; const proj = projectilePool.get(); if (proj) proj.activate(this.x - 100, this.y, 0, 0, 15, '#a0d2eb', 3.0, false, true); } }, 800); }
             freezingCloud() { this.state = 'telegraph'; this.timer = 1.5; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 3.0; screenEffects.shake(0.4, 10); particleManager.spawn({ x: GAME_WIDTH / 2, y: 600, count: 200, color: '#e0f7fa', speed: 50, size: 8, lifetime: 3, angle: -Math.PI / 2, spread: Math.PI / 4, gravity: -100, glow: true }); const attackInterval = setInterval(() => { if (!this.active || game.player.hp <= 0) { clearInterval(attackInterval); return; } if (game.player.onGround && game.currentRoom === this.room) game.player.takeDamage(5); }, 200); setTimeout(() => clearInterval(attackInterval), 3000); } }, 1500); }
         }
+        // CLASS KOKUSHIBO - FULLY REWRITTEN FOR STABILITY
         class Kokushibo extends Boss {
-            constructor(x, y) { super({ name: "Kokushibo, Upper Moon 1", spriteKey: 'kokushibo', maxHp: 250, startX: x, startY: y, w: 60, h: 90, color: '#4a148c', p2Color: '#7b1fa2', p3Color: '#9c27b0', particleColor: '#ce93d8' }); }
+            constructor(x, y) {
+                super({
+                    name: "Kokushibo, Upper Moon 1",
+                    spriteKey: 'kokushibo',
+                    maxHp: 250,
+                    startX: x,
+                    startY: y,
+                    w: 60,
+                    h: 90,
+                    color: '#4a148c',
+                    p2Color: '#7b1fa2',
+                    p3Color: '#9c27b0',
+                    particleColor: '#ce93d8'
+                });
+                this.attackLock = false;
+                this.lastAttackTime = 0;
+            }
+
             updatePhases() {
-                if (this.hp < this.maxHp * 0.7 && this.phase === 1) { this.phase = 2; this.state = 'transition'; this.timer = 1.5; screenEffects.shake(0.7, 18); }
-                else if (this.hp < this.maxHp * 0.4 && this.phase === 2) { this.phase = 3; this.state = 'transition'; this.timer = 1.5; screenEffects.shake(1.0, 22); }
+                if (this.hp < this.maxHp * 0.7 && this.phase === 1) {
+                    this.phase = 2;
+                    this.state = 'transition';
+                    this.timer = 1.5;
+                    screenEffects.shake(0.7, 18);
+                }
+                else if (this.hp < this.maxHp * 0.4 && this.phase === 2) {
+                    this.phase = 3;
+                    this.state = 'transition';
+                    this.timer = 1.5;
+                    screenEffects.shake(1.0, 22);
+                }
             }
-            chooseAction(p) {
+
+            chooseAction(player) {
+                // Prevent action selection if we're locked in an attack
+                if (this.attackLock) return;
+
+                // Add cooldown between attacks
+                const currentTime = performance.now();
+                if (currentTime - this.lastAttackTime < 1000) return;
+
                 let a = Math.random();
-                if (this.phase === 1) { if (a < 0.7) this.moonSlash(p); else this.teleport(p); }
-                else if (this.phase === 2) { if (a < 0.5) this.moonSlash(p, 3); else if (a < 0.8) this.multiSlash(p); else this.teleport(p); }
-                else { if (a < 0.4) this.multiSlash(p); else if (a < 0.8) this.moonVortex(); else this.teleport(p); }
+                if (this.phase === 1) {
+                    if (a < 0.7) this.moonSlash();
+                    else this.teleport();
+                }
+                else if (this.phase === 2) {
+                    if (a < 0.5) this.moonSlash(3);
+                    else if (a < 0.8) this.multiSlash();
+                    else this.teleport();
+                }
+                else {
+                    if (a < 0.4) this.multiSlash();
+                    else if (a < 0.8) this.moonVortex();
+                    else this.teleport();
+                }
             }
-            teleport(p) { this.state = 'telegraph'; this.timer = 0.3; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 20, color: this.particleColor, speed: 300, size: 4, lifetime: 0.3, glow: true }); setTimeout(() => { if (this.hp > 0 && this.active) { this.x = p.facing > 0 ? p.x - 150 : p.x + 150; this.y = p.y; this.state = 'idle'; this.timer = 0.5; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 20, color: this.particleColor, speed: 300, size: 4, lifetime: 0.3, glow: true }); } }, 300); }
-            moonSlash(p, count = 1) { this.state = 'telegraph'; this.timer = 0.8; audio.playSound('skill_moon'); setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 1.2; for (let i = 0; i < count; i++) { setTimeout(() => { if (!this.active) return; const ang = Math.atan2(p.y - this.y, p.x - this.x); const proj = projectilePool.get(); if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, ang, 600, 20, this.particleColor, 1.5, true); }, i * 200); } } }, 800); }
-            multiSlash(p) { this.state = 'telegraph'; this.timer = 1.0; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; let ang = Math.atan2(p.y - this.y, p.x - this.x); for (let i = -2; i <= 2; i++) { const proj = projectilePool.get(); if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, ang + i * 0.2, 500, 15, this.particleColor, 1.8, true); } } }, 1000); }
+
+            // Safe attack execution helper
+            safeExecuteAttack(attackFunction, duration) {
+                if (this.attackLock || !this.active || this.hp <= 0) return;
+
+                this.attackLock = true;
+                this.lastAttackTime = performance.now();
+
+                try {
+                    attackFunction();
+                } catch (error) {
+                    console.error('Attack execution error:', error);
+                    this.attackLock = false;
+                }
+
+                // Unlock after duration, but keep track of the timer so it can be cleared if needed
+                if (!this._timers) this._timers = [];
+                const unlockId = setTimeout(() => {
+                    this.attackLock = false;
+                    this._timers = this._timers.filter(t => t !== unlockId);
+                }, duration);
+                this._timers.push(unlockId);
+            }
+
+            // Helper wrappers that track timeouts/intervals so they can be cleared on reset
+            scheduleTimeout(fn, delay) {
+                if (!this._timers) this._timers = [];
+                const id = setTimeout(() => {
+                    try { fn(); } catch (e) { console.error('Scheduled timeout error:', e); }
+                    this._timers = this._timers.filter(t => t !== id);
+                }, delay);
+                this._timers.push(id);
+                return id;
+            }
+
+            scheduleInterval(fn, interval) {
+                if (!this._timers) this._timers = [];
+                const id = setInterval(() => {
+                    try { fn(); } catch (e) { console.error('Scheduled interval error:', e); }
+                }, interval);
+                this._timers.push(id);
+                return id;
+            }
+
+            // Clear any scheduled timers when resetting
+            reset() {
+                if (this._timers) {
+                    this._timers.forEach(id => { try { clearTimeout(id); clearInterval(id); } catch (e) { } });
+                    this._timers = [];
+                }
+                this.attackLock = false;
+                this.lastAttackTime = 0;
+                // call base reset behavior
+                super.reset();
+            }
+
+            // The following methods no longer accept a 'p' parameter.
+            // They now safely get the player's current data from the global 'game' object inside the timeout.
+            teleport() {
+                this.safeExecuteAttack(() => {
+                    this.state = 'telegraph';
+                    this.timer = 0.3;
+                    particleManager.spawn({
+                        x: this.x + this.w / 2,
+                        y: this.y + this.h / 2,
+                        count: 20,
+                        color: this.particleColor,
+                        speed: 300,
+                        size: 4,
+                        lifetime: 0.3,
+                        glow: true
+                    });
+
+                    this.scheduleTimeout(() => {
+                        if (!this.active || this.hp <= 0) return;
+                        const player = game.player;
+                        if (!player) return;
+
+                        this.x = player.facing > 0 ? player.x - 150 : player.x + 150;
+                        this.y = player.y;
+                        this.state = 'idle';
+                        this.timer = 0.5;
+
+                        particleManager.spawn({
+                            x: this.x + this.w / 2,
+                            y: this.y + this.h / 2,
+                            count: 20,
+                            color: this.particleColor,
+                            speed: 300,
+                            size: 4,
+                            lifetime: 0.3,
+                            glow: true
+                        });
+                    }, 300);
+                }, 800);
+            }
+
+            moonSlash(count = 1) {
+                this.safeExecuteAttack(() => {
+                    this.state = 'telegraph';
+                    this.timer = 0.8;
+                    audio.playSound('skill_moon');
+
+                    this.scheduleTimeout(() => {
+                        if (!this.active || this.hp <= 0) return;
+                        this.state = 'idle';
+                        this.timer = 1.2;
+
+                        for (let i = 0; i < count; i++) {
+                            this.scheduleTimeout(() => {
+                                if (!this.active || !game.player) return;
+                                const player = game.player;
+                                const ang = Math.atan2(player.y - this.y, player.x - this.x);
+                                const proj = projectilePool.get();
+                                if (proj) {
+                                    proj.activate(
+                                        this.x + this.w / 2,
+                                        this.y + this.h / 2,
+                                        ang,
+                                        600,
+                                        20,
+                                        this.particleColor,
+                                        1.5,
+                                        true
+                                    );
+                                }
+                            }, i * 200);
+                        }
+                    }, 800);
+                }, 1500);
+            }
+
+            multiSlash() {
+                this.safeExecuteAttack(() => {
+                    this.state = 'telegraph';
+                    this.timer = 1.0;
+
+                    this.scheduleTimeout(() => {
+                        if (!this.active || this.hp <= 0) return;
+                        const player = game.player;
+                        if (!player) return;
+
+                        this.state = 'idle';
+                        this.timer = 2.0;
+
+                        const ang = Math.atan2(player.y - this.y, player.x - this.x);
+                        for (let i = -2; i <= 2; i++) {
+                            const proj = projectilePool.get();
+                            if (proj) {
+                                proj.activate(
+                                    this.x + this.w / 2,
+                                    this.y + this.h / 2,
+                                    ang + i * 0.2,
+                                    500,
+                                    15,
+                                    this.particleColor,
+                                    1.8,
+                                    true
+                                );
+                            }
+                        }
+                    }, 1000);
+                }, 2000);
+            }
+
             moonVortex() {
-                this.state = 'telegraph'; this.timer = 1.2;
-                setTimeout(() => {
-                    if (this.hp > 0 && this.active) {
-                        this.state = 'idle'; this.timer = 3.0; screenEffects.shake(0.8, 20);
+                this.safeExecuteAttack(() => {
+                    this.state = 'telegraph';
+                    this.timer = 1.2;
+
+                    this.scheduleTimeout(() => {
+                        if (!this.active || this.hp <= 0) return;
+
+                        this.state = 'idle';
+                        this.timer = 3.0;
+                        screenEffects.shake(0.8, 20);
+
                         for (let i = 0; i < 16; i++) {
                             const proj = projectilePool.get();
-                            if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, (i / 16) * Math.PI * 2, 400, 25, this.particleColor, 2.5, true);
+                            if (proj) {
+                                proj.activate(
+                                    this.x + this.w / 2,
+                                    this.y + this.h / 2,
+                                    (i / 16) * Math.PI * 2,
+                                    400,
+                                    25,
+                                    this.particleColor,
+                                    2.5,
+                                    true
+                                );
+                            }
                         }
-                    }
-                }, 1200);
+                    }, 1200);
+                }, 2500);
             }
         }
 
@@ -1298,8 +1531,9 @@
                     ctx.globalAlpha = 0.6 * (1 - this.age / this.lifetime);
                     ctx.fillRect(this.x, this.y, this.w, this.h);
                 } else if (this.isCrescent) {
-                    ctx.beginPath(); const angle = Math.atan2(this.vy, this.vx);
+                    const angle = Math.atan2(this.vy, this.vx);
                     ctx.translate(this.x, this.y); ctx.rotate(angle); ctx.scale(1.5, 1);
+                    ctx.beginPath();
                     ctx.arc(0, 0, 15, -Math.PI / 2, Math.PI / 2);
                     ctx.arc(0, 0, 10, Math.PI / 2, -Math.PI / 2, true);
                     ctx.closePath(); ctx.fill();
@@ -1326,8 +1560,19 @@
                         return this.pool[i];
                     }
                 }
-                console.warn("Projectile pool is full!");
-                return null;
+                // If pool is full, recycle the oldest active projectile to avoid returning null
+                let oldestIndex = 0;
+                let oldestAge = -1;
+                for (let i = 0; i < this.maxSize; i++) {
+                    if (this.pool[i].age > oldestAge) {
+                        oldestAge = this.pool[i].age;
+                        oldestIndex = i;
+                    }
+                }
+                console.warn("Projectile pool full — recycling oldest projectile.");
+                const p = this.pool[oldestIndex];
+                p.active = false; // deactivate so activate() can reinitialize
+                return p;
             }
         };
 
@@ -1390,12 +1635,29 @@
             update(dt) {
                 if (this.state === 'dialogue') { dialogueManager.update(dt); return; }
                 if (this.hitStop > 0) { this.hitStop -= dt; return; }
-                this.player.update(dt, this.currentRoom);
-                this.currentRoom.update(dt);
+                try {
+                    this.player.update(dt, this.currentRoom);
+                } catch (e) {
+                    console.error('Error updating player', e);
+                }
+                try {
+                    this.currentRoom.update(dt);
+                } catch (e) {
+                    console.error('Error updating currentRoom', e);
+                }
                 this.camera.follow(this.player, this.currentRoom);
                 particleManager.update(dt);
                 screenEffects.update(dt);
-                projectilePool.pool.forEach(p => p.update(dt));
+                for (let i = 0; i < projectilePool.pool.length; i++) {
+                    const p = projectilePool.pool[i];
+                    if (!p || !p.active) continue;
+                    try {
+                        p.update(dt);
+                    } catch (err) {
+                        console.error('Projectile update error', err);
+                        p.active = false;
+                    }
+                }
 
                 for (let i = this.currentRoom.healingOrbs.length - 1; i >= 0; i--) {
                     const orb = this.currentRoom.healingOrbs[i];
@@ -1487,14 +1749,34 @@
         let gameLoopId = null;
 
         function loop(timestamp) {
-            const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
-            lastTime = timestamp;
-            if (game.state === 'playing' || game.state === 'dialogue') {
-                game.update(dt);
+            try {
+                const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+                lastTime = timestamp;
+                if (game.state === 'playing' || game.state === 'dialogue') {
+                    game.update(dt);
+                }
+                game.draw();
+            } catch (err) {
+                console.error('Unhandled error in main loop:', err);
+                try {
+                    // Attempt to neutralize current boss to prevent repeated crashes
+                    const activeBoss = game.currentRoom && game.currentRoom.getActiveBoss && game.currentRoom.getActiveBoss();
+                    if (activeBoss) {
+                        console.warn('Deactivating boss to recover from error:', activeBoss.name);
+                        activeBoss.active = false;
+                    }
+                } catch (ee) { console.error('Error while attempting recovery:', ee); }
             }
-            game.draw();
             gameLoopId = requestAnimationFrame(loop);
         }
+
+        // Global error handlers to capture uncaught exceptions and promise rejections
+        window.addEventListener('error', (e) => {
+            console.error('Global error captured:', e.error || e.message, e.error && e.error.stack);
+        });
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('Unhandled promise rejection:', e.reason, e.reason && e.reason.stack);
+        });
 
         document.getElementById('start-screen').addEventListener('click', () => {
             if (assetManager.isDone() && !gameLoopId) {
