@@ -288,20 +288,60 @@
 
     <div id="start-screen" class="game-screen">
         <h1>Demon Slayer: Final Confrontation</h1>
-        <p>Click to Begin</p>
+        <p>Press Space to Begin</p>
         <div class="controls">
-            [A][D] - Move | [W] - Jump/Double Jump | [C] - Dash<br>
-            [Q] - Switch Breathing Style | [F] - Parry | [X] - Basic Attack | [1][2][3] - Special Attacks
+            [A][D] - Move | [W] - Jump/Double Jump | [Q] - Dash<br>
+            [C] - Switch Breathing Style | [F] - Parry | Mouse Click - Basic Attack | [1][2][3] - Special Attacks
         </div>
     </div>
     <div id="game-over-screen" class="game-screen" style="display: none;">
         <h1>You Have Fallen</h1>
-        <p>Click to Restart</p>
+        <p>Press Space to Restart</p>
     </div>
     <div id="victory-screen" class="game-screen" style="display: none;">
         <h1>Victory</h1>
         <p>You have defeated the Upper Moons!</p>
-        <div class="controls">Click to Play Again</div>
+        <div class="controls">Press Space to Play Again</div>
+    </div>
+
+    <!-- Pause / Settings / Breathing Selector UI -->
+    <div id="pause-overlay" class="game-screen" style="display:none; z-index: 30;">
+        <h1>Paused</h1>
+        <div style="margin-top:20px;">
+            <button id="resume-btn">Resume</button>
+            <button id="restart-btn">Restart</button>
+        </div>
+        <div style="margin-top:20px;">
+            <label>Music: <input id="music-slider" type="range" min="0" max="1" step="0.01" value="0.6"></label><br>
+            <label>SFX: <input id="sfx-slider" type="range" min="0" max="1" step="0.01" value="0.8"></label><br>
+            <label>Graphics Quality: <input id="quality-slider" type="range" min="0.4" max="1" step="0.05"
+                    value="1"></label>
+        </div>
+    </div>
+
+    <div id="breathing-selector"
+        style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); pointer-events:none; display:none; z-index:40;">
+        <div
+            style="width:280px; height:280px; border-radius:50%; background:radial-gradient(circle at 40% 30%, rgba(255,255,255,0.04), rgba(0,0,0,0.6)); box-shadow:0 0 40px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#fff; font-family: sans-serif;">
+            <div style="text-align:center; pointer-events:none;">
+                <div style="font-size:18px; margin-bottom:8px;">Select Breathing</div>
+                <div style="display:flex; gap:8px; justify-content:center;">
+                    <div data-style="0" class="bs-item"
+                        style="width:56px;height:56px;border-radius:8px;background:#42a5f5;display:flex;align-items:center;justify-content:center;">
+                        Water</div>
+                    <div data-style="1" class="bs-item"
+                        style="width:56px;height:56px;border-radius:8px;background:#ff7043;display:flex;align-items:center;justify-content:center;">
+                        Fire</div>
+                    <div data-style="2" class="bs-item"
+                        style="width:56px;height:56px;border-radius:8px;background:#bfefff;display:flex;align-items:center;justify-content:center;">
+                        Wind</div>
+                    <div data-style="3" class="bs-item"
+                        style="width:56px;height:56px;border-radius:8px;background:#a1887f;display:flex;align-items:center;justify-content:center;">
+                        Stone</div>
+                </div>
+                <div style="font-size:12px;margin-top:10px;opacity:0.9;">Release Q to select</div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -335,6 +375,12 @@
                 }
                 for (let i = 0; i < this.queue.length; i++) {
                     const { alias, path } = this.queue[i];
+
+                    if (this.images[alias]) {
+                        this.successCount++;
+                        if (this.isDone()) callback();
+                        continue;
+                    }
                     const img = new Image();
                     img.addEventListener("load", () => {
                         this.successCount++;
@@ -343,9 +389,12 @@
                         }
                     });
                     img.addEventListener("error", () => {
+
+                        try { delete this.images[alias]; } catch (e) { }
                         this.errorCount++;
-                        console.error(`Failed to load image at path: ${path}`);
+                        console.warn(`Failed to load image at path: ${path}. Using built-in shape renderer fallback. To restore original sprites, place your sprite files at the listed paths (e.g. ${path}).`);
                         if (this.isDone()) {
+
                             callback();
                         }
                     });
@@ -366,6 +415,87 @@
         // ##################################################################
         // #                           SYSTEMS                            #
         // ##################################################################
+
+        // --- Sprite Animator (sprite sheet-based animation helper)
+        class SpriteAnimator {
+            constructor(image, frameWidth, frameHeight, animations = {}) {
+                this.image = image; this.fw = frameWidth; this.fh = frameHeight; this.animations = animations;
+                this.current = null; this.currentTime = 0; this.frameIndex = 0; this.loop = true;
+            }
+            play(name, loop = true) {
+                if (!this.animations[name]) return; if (this.current !== name) { this.current = name; this.currentTime = 0; this.frameIndex = 0; this.loop = loop; }
+            }
+            update(dt) {
+                if (!this.current) return; const anim = this.animations[this.current]; this.currentTime += dt * 1000; while (this.currentTime >= anim.frames[this.frameIndex].duration) { this.currentTime -= anim.frames[this.frameIndex].duration; this.frameIndex++; if (this.frameIndex >= anim.frames.length) { if (this.loop) this.frameIndex = 0; else { this.frameIndex = anim.frames.length - 1; } } }
+            }
+            draw(ctx, x, y, scale = 1, flip = false) {
+                if (!this.current) return; const anim = this.animations[this.current]; const f = anim.frames[this.frameIndex]; const sx = f.x * this.fw, sy = f.y * this.fh;
+                ctx.save(); if (flip) { ctx.scale(-1, 1); ctx.drawImage(this.image, sx, sy, this.fw, this.fh, -x - this.fw * scale, y, this.fw * scale, this.fh * scale); } else { ctx.drawImage(this.image, sx, sy, this.fw, this.fh, x, y, this.fw * scale, this.fh * scale); } ctx.restore();
+            }
+        }
+
+
+        const spriteAnimators = {};
+
+        // --- Save Manager (localStorage) ---
+        const SaveManager = {
+            key: 'slayer_legacy_save_v1',
+            save(data) { try { localStorage.setItem(this.key, JSON.stringify(data)); } catch (e) { console.warn('Save failed', e); } },
+            load() { try { const raw = localStorage.getItem(this.key); return raw ? JSON.parse(raw) : null; } catch (e) { console.warn('Load failed', e); return null; } },
+            clear() { localStorage.removeItem(this.key); }
+        };
+
+        // --- Pause / Settings handlers ---
+        const pauseOverlay = document.getElementById('pause-overlay');
+        const resumeBtn = document.getElementById('resume-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const musicSlider = document.getElementById('music-slider');
+        const sfxSlider = document.getElementById('sfx-slider');
+        const qualitySlider = document.getElementById('quality-slider');
+        let isPaused = false;
+        function openPause() { isPaused = true; pauseOverlay.style.display = 'flex'; game.setState('paused'); }
+        function closePause() { isPaused = false; pauseOverlay.style.display = 'none'; game.setState('playing'); lastTime = performance.now(); }
+        resumeBtn.addEventListener('click', () => closePause());
+        restartBtn.addEventListener('click', () => { game.reset(); closePause(); });
+        qualitySlider.addEventListener('input', () => { perfOverlay.quality = Number(qualitySlider.value); particleManager.particleScale = perfOverlay.quality; particleManager.maxParticles = Math.round(800 * perfOverlay.quality); });
+
+        // --- Breathing selector logic ---
+
+        const breathingSelector = document.getElementById('breathing-selector');
+        let selectedStyle = 0;
+
+        breathingSelector.style.pointerEvents = 'auto';
+        function updateBreathingUI() {
+            const bsItems = document.querySelectorAll('#breathing-selector .bs-item');
+            let current = selectedStyle;
+            try {
+
+                if (game && game.player) current = game.player.currentStyle;
+            } catch (e) {
+
+            }
+            bsItems.forEach(it => {
+                if (Number(it.dataset.style) === current) it.style.outline = '2px solid #fff';
+                else it.style.outline = '';
+            });
+        }
+        document.querySelectorAll('#breathing-selector .bs-item').forEach(el => {
+            el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.06)'; });
+            el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
+            el.addEventListener('click', () => {
+                const s = Number(el.dataset.style);
+                selectedStyle = s;
+                try {
+                    if (game && game.player) game.player.currentStyle = s;
+                } catch (e) {
+
+                }
+                updateBreathingUI();
+            });
+        });
+
+        updateBreathingUI();
+
 
         // --- Audio Engine ---
         const audio = {
@@ -388,6 +518,8 @@
                     case 'skill_fire': freq = 250; duration = 0.5; wave = 'sawtooth'; break;
                     case 'skill_ice': freq = 700; duration = 0.6; wave = 'sine'; break;
                     case 'skill_moon': freq = 180; duration = 0.7; wave = 'sawtooth'; break;
+                    case 'skill_wind': freq = 900; duration = 0.35; wave = 'triangle'; break;
+                    case 'skill_stone': freq = 160; duration = 0.8; wave = 'sine'; break;
                     case 'switch_style': freq = 1000; duration = 0.05; break;
                     case 'heal': freq = 800; wave = 'sine'; duration = 0.3; break;
                     case 'parry_success': freq = 1200; wave = 'sine'; duration = 0.2; break;
@@ -408,22 +540,59 @@
         keysToTrack.forEach(key => input[key + 'Pressed'] = false);
         window.addEventListener('keydown', handleKeyEvent);
         window.addEventListener('keyup', handleKeyEvent);
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                if (!input.attack) input.attackPressed = true;
+                input.attack = true;
+            }
+        });
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
+                input.attack = false;
+            }
+        });
         function handleKeyEvent(e) {
             if (dialogueManager.isActive) return;
             const state = e.type === 'keydown';
+
+            if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+                if (state && !input.jump) input.jumpPressed = true;
+                input.jump = state;
+                return;
+            }
             switch (e.code) {
                 case 'KeyA': case 'ArrowLeft': input.left = state; break;
                 case 'KeyD': case 'ArrowRight': input.right = state; break;
                 case 'KeyW': case 'ArrowUp': if (state && !input.jump) input.jumpPressed = true; input.jump = state; break;
-                case 'KeyC': if (state && !input.dash) input.dashPressed = true; input.dash = state; break;
+                case 'KeyQ':
+                    if (state && !input.dash) input.dashPressed = true; input.dash = state; break;
+
                 case 'KeyX': if (state && !input.attack) input.attackPressed = true; input.attack = state; break;
                 case 'Digit1': if (state && !input.skill1) input.skill1Pressed = true; input.skill1 = state; break;
                 case 'Digit2': if (state && !input.skill2) input.skill2Pressed = true; input.skill2 = state; break;
                 case 'Digit3': if (state && !input.skill3) input.skill3Pressed = true; input.skill3 = state; break;
-                case 'KeyQ': if (state && !input.switchStyle) input.switchStylePressed = true; input.switchStyle = state; break;
                 case 'KeyF': if (state && !input.parry) input.parryPressed = true; input.parry = state; break;
             }
         }
+
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyC' && !dialogueManager.isActive) {
+
+                breathingSelector.style.display = 'block';
+                setTimeout(() => { breathingSelector.style.display = 'none'; }, 1200);
+
+                try {
+                    if (game && game.player) {
+                        game.player.currentStyle = (game.player.currentStyle + 1) % game.player.skills.length;
+                        audio.playSound('switch_style');
+                        updateBreathingUI();
+                        particleManager.spawn({ x: game.player.x + game.player.w / 2, y: game.player.y + game.player.h / 2, count: 25, color: game.player.currentStyle === 0 ? '#42a5f5' : '#ff7043', speed: 100, size: 4, lifetime: 0.5, glow: true });
+                    }
+                } catch (err) { }
+            }
+        });
 
         // --- Particle Engine ---
         class Particle {
@@ -439,18 +608,53 @@
         }
         const particleManager = {
             particles: [],
+            maxParticles: 800,
+            particleScale: 1,
             spawn(config) {
                 const { x, y, count, color, speed, size, lifetime, angle = 0, spread = Math.PI * 2, gravity = 0, ...rest } = config;
-                for (let i = 0; i < count; i++) {
+
+                const allowed = Math.max(0, this.maxParticles - this.particles.length);
+                const toSpawn = Math.min(count, allowed);
+                if (toSpawn <= 0) return;
+                for (let i = 0; i < toSpawn; i++) {
                     const currentAngle = angle - spread / 2 + Math.random() * spread;
                     const currentSpeed = (typeof speed === 'number') ? Math.random() * speed : speed[0] + Math.random() * (speed[1] - speed[0]);
                     const vx = Math.cos(currentAngle) * currentSpeed; const vy = Math.sin(currentAngle) * currentSpeed;
                     const pSize = (typeof size === 'number') ? Math.random() * size + 1 : size[0] + Math.random() * (size[1] - size[0]);
-                    this.particles.push(new Particle({ x, y, vx, vy, size: pSize, color, lifetime: Math.random() * lifetime + 0.2, gravity, ...rest }));
+                    this.particles.push(new Particle({ x, y, vx, vy, size: pSize * this.particleScale, color, lifetime: Math.random() * lifetime + 0.2, gravity, ...rest }));
                 }
             },
             update(dt) { for (let i = this.particles.length - 1; i >= 0; i--) { this.particles[i].update(dt); if (this.particles[i].isDead()) this.particles.splice(i, 1); } },
             draw(ctx) { this.particles.forEach(p => p.draw(ctx)); }
+        };
+
+        // --- Visual helpers ---
+        function drawTelegraphRing(ctx, x, y, radius, color, progress) {
+            ctx.save();
+            ctx.globalAlpha = 0.6 * (1 - progress);
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, radius * (0.6 + progress * 0.8), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // --- Debug / Performance overlay ---
+        const perfOverlay = {
+            fps: 60, last: performance.now(), frames: 0, lastSample: performance.now(), quality: 1.0, update() {
+                this.frames++;
+                const now = performance.now();
+                if (now - this.lastSample > 500) {
+                    this.fps = Math.round((this.frames * 1000) / (now - this.lastSample));
+                    this.frames = 0; this.lastSample = now;
+
+                    if (this.fps < 40) this.quality = Math.max(0.4, this.quality - 0.1);
+                    else if (this.fps > 55) this.quality = Math.min(1.0, this.quality + 0.05);
+                    particleManager.particleScale = this.quality;
+                    particleManager.maxParticles = Math.round(800 * this.quality);
+                }
+            }, draw(ctx) { ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(10, 10, 120, 40); ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif'; ctx.fillText(`FPS: ${this.fps}`, 18, 28); ctx.fillText(`Q: ${Math.round(this.quality * 100)}%`, 18, 44); ctx.restore(); }
         };
 
         // --- Dialogue Manager ---
@@ -541,7 +745,7 @@
                 const worldWidth = 4000;
                 const worldHeight = 3000;
 
-                // Far layer (less detail, more atmospheric)
+
                 for (let i = 0; i < 40; i++) {
                     this.layers.far.structures.push({
                         x: Math.random() * worldWidth - worldWidth / 2,
@@ -553,7 +757,7 @@
                     });
                 }
 
-                // Mid layer (more defined structures)
+
                 for (let i = 0; i < 25; i++) {
                     this.layers.mid.structures.push({
                         x: Math.random() * worldWidth - worldWidth / 2,
@@ -565,7 +769,7 @@
                     });
                 }
 
-                // Near layer (most defined, fastest moving)
+
                 for (let i = 0; i < 15; i++) {
                     this.layers.near.structures.push({
                         x: Math.random() * worldWidth - worldWidth / 2,
@@ -579,7 +783,7 @@
             }
 
             draw(ctx, camera) {
-                // Base atmospheric gradient
+
                 const grad = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
                 grad.addColorStop(0, '#1a0802');
                 grad.addColorStop(1, '#4d2412');
@@ -623,7 +827,7 @@
                 if (this.type === 'moving_v') { this.y += this.vy * dt; if (Math.abs(this.y - this.initialY) > 100) this.vy *= -1; }
             }
             draw(ctx) {
-                // Draw spikes
+
                 if (this.type === 'spike') {
                     ctx.fillStyle = '#ff4d4d'; ctx.beginPath();
                     for (let i = 0; i < this.w / 16; i++) { ctx.moveTo(this.x + i * 16, this.y + 16); ctx.lineTo(this.x + i * 16 + 8, this.y); ctx.lineTo(this.x + i * 16 + 16, this.y + 16); }
@@ -631,7 +835,7 @@
                     return;
                 }
 
-                // Platforms are now visible again.
+
                 const gradient = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.h);
                 gradient.addColorStop(0, '#5a5278');
                 gradient.addColorStop(1, '#302a4d');
@@ -660,7 +864,7 @@
             update(dt) {
                 this.tiles.forEach(t => t.update(dt));
                 this.healingOrbs.forEach(o => o.update(dt));
-                // Call the boss update method with only the arguments it's defined to accept.
+
                 for (let i = 0; i < this.bosses.length; i++) {
                     const b = this.bosses[i];
                     if (!b || !b.active) continue;
@@ -668,7 +872,7 @@
                         b.update(dt, game.player);
                     } catch (e) {
                         console.error('Error updating boss', b && b.name, e);
-                        // Safely deactivate boss to avoid repeated crashes
+
                         try { b.active = false; } catch (ee) { }
                     }
                 }
@@ -695,13 +899,16 @@
         // ##################################################################
         const spriteRenderer = {
             drawTanjiro(ctx, p) {
+
+                const anim = spriteAnimators.tanjiro;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, p.w / anim.fw), false); return; }
                 const w = p.w, h = p.h;
 
-                // Uniform
-                ctx.fillStyle = '#28282e';
-                ctx.fillRect(w * 0.2, h * 0.4, w * 0.6, h * 0.6); // Body
 
-                // Haori
+                ctx.fillStyle = '#28282e';
+                ctx.fillRect(w * 0.2, h * 0.4, w * 0.6, h * 0.6);
+
+
                 const isFire = p.currentStyle === 1;
                 const lightCol = isFire ? '#ff7043' : '#31645e';
                 const darkCol = isFire ? '#bf360c' : '#1a1a1a';
@@ -716,11 +923,11 @@
                     }
                 }
 
-                // Skin (Head)
+
                 ctx.fillStyle = '#f2d3b8';
                 ctx.fillRect(w * 0.2, h * 0.1, w * 0.6, h * 0.35);
 
-                // Hair
+
                 ctx.fillStyle = '#3a0e0e';
                 ctx.beginPath();
                 ctx.moveTo(w * 0.05, h * 0.2);
@@ -730,16 +937,16 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // Scar
+
                 ctx.fillStyle = '#a8524f';
                 ctx.fillRect(w * 0.25, h * 0.15, w * 0.15, h * 0.05);
 
-                // Eyes
+
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(w * 0.35, h * 0.25, w * 0.1, h * 0.05);
                 ctx.fillRect(w * 0.55, h * 0.25, w * 0.1, h * 0.05);
 
-                // Earrings
+
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(w * 0.15, h * 0.3, w * 0.05, h * 0.15);
                 ctx.fillStyle = '#b71c1c';
@@ -747,57 +954,63 @@
             },
 
             drawGiyu(ctx, h) {
+                const anim = spriteAnimators.giyu;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, h.w / anim.fw), false); return; }
                 const w = h.w, height = h.h;
-                // Uniform
-                ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, height * 0.4, w * 0.6, height * 0.6); // Body
 
-                // Haori - Right side (burgundy)
+                ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, height * 0.4, w * 0.6, height * 0.6);
+
+
                 ctx.fillStyle = '#8c2727';
                 ctx.fillRect(w * 0.5, height * 0.4, w * 0.45, height * 0.55);
-                // Haori - Left side (pattern)
+
                 ctx.fillStyle = '#4caf50'; ctx.fillRect(w * 0.05, height * 0.4, w * 0.45, height * 0.55);
                 ctx.fillStyle = '#ffeb3b'; ctx.fillRect(w * 0.05, height * 0.5, w * 0.45, height * 0.1);
 
-                // Skin & Hair
-                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, height * 0.1, w * 0.6, height * 0.3); // Head
-                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3); // Hair
+
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, height * 0.1, w * 0.6, height * 0.3);
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3);
             },
 
             drawShinobu(ctx, h) {
+                const anim = spriteAnimators.shinobu;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, h.w / anim.fw), false); return; }
                 const w = h.w, height = h.h;
-                // Uniform
+
                 ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, height * 0.4, w * 0.6, height * 0.6);
 
-                // Haori (Butterfly pattern)
+
                 ctx.fillStyle = '#ffffff'; ctx.fillRect(w * 0.05, height * 0.4, w * 0.9, height * 0.55);
                 ctx.fillStyle = '#ab47bc';
                 ctx.beginPath(); ctx.moveTo(w * 0.05, height * 0.95); ctx.lineTo(w * 0.5, height * 0.7); ctx.lineTo(w * 0.95, height * 0.95); ctx.fill();
                 ctx.fillStyle = '#4dd0e1';
                 ctx.beginPath(); ctx.moveTo(w * 0.05, height * 0.85); ctx.lineTo(w * 0.5, height * 0.6); ctx.lineTo(w * 0.95, height * 0.85); ctx.fill();
 
-                // Skin & Hair
-                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, height * 0.1, w * 0.6, height * 0.3); // Head
-                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3); // Hair
-                ctx.fillStyle = '#6a1b9a'; ctx.fillRect(w * 0.15, height * 0.25, w * 0.7, height * 0.1); // Hair tips
+
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, height * 0.1, w * 0.6, height * 0.3);
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3);
+                ctx.fillStyle = '#6a1b9a'; ctx.fillRect(w * 0.15, height * 0.25, w * 0.7, height * 0.1);
             },
 
             drawGyomei(ctx, h) {
+                const anim = spriteAnimators.gyomei;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, h.w / anim.fw), false); return; }
                 const w = h.w, height = h.h;
-                // Body (very muscular)
+
                 ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.05, height * 0.35, w * 0.9, height * 0.65);
 
-                // Happi Coat
+
                 ctx.fillStyle = '#4e342e'; ctx.fillRect(w * 0.05, height * 0.35, w * 0.9, height * 0.55);
                 ctx.fillStyle = '#ffffff';
                 ctx.font = `${height * 0.2}px serif`;
                 ctx.textAlign = 'center';
                 ctx.fillText('南無', w / 2, height * 0.7);
 
-                // Skin & Hair (Larger build)
-                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3); // Head
-                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.02, w * 0.8, height * 0.2); // Hair
 
-                // Beads
+                ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.1, height * 0.05, w * 0.8, height * 0.3);
+                ctx.fillStyle = '#1a1a1a'; ctx.fillRect(w * 0.1, height * 0.02, w * 0.8, height * 0.2);
+
+
                 ctx.fillStyle = '#b71c1c';
                 for (let i = 0; i < 5; i++) {
                     ctx.beginPath(); ctx.arc(w * 0.2 + i * w * 0.15, height * 0.38, w * 0.05, 0, Math.PI * 2); ctx.fill();
@@ -805,43 +1018,49 @@
             },
 
             drawAkaza(ctx, b) {
+                const anim = spriteAnimators.akaza;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, b.w / anim.fw), false); return; }
                 const w = b.w, h = b.h;
-                // Body
+
                 ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, h * 0.2, w, h * 0.8);
-                // Tattoos
+
                 ctx.strokeStyle = '#0077be'; ctx.lineWidth = 2;
                 for (let i = 0; i < 5; i++) {
                     ctx.beginPath(); ctx.moveTo(0, h * 0.25 + i * h * 0.15); ctx.lineTo(w, h * 0.25 + i * h * 0.15); ctx.stroke();
                 }
-                // Pants
+
                 ctx.fillStyle = '#ffffff'; ctx.fillRect(w * 0.1, h * 0.7, w * 0.8, h * 0.3);
-                // Hair
+
                 ctx.fillStyle = '#ff69b4'; ctx.fillRect(0, 0, w, h * 0.3);
             },
 
             drawDoma(ctx, b) {
+                const anim = spriteAnimators.doma;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, b.w / anim.fw), false); return; }
                 const w = b.w, h = b.h;
-                // Top
+
                 ctx.fillStyle = '#b71c1c'; ctx.fillRect(w * 0.1, h * 0.3, w * 0.8, h * 0.7);
-                // Skin
+
                 ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, h * 0.1, w * 0.6, h * 0.2);
-                // Hair
+
                 ctx.fillStyle = '#fffde7'; ctx.fillRect(0, 0, w, h * 0.3);
-                // Hat-like thing
+
                 ctx.fillStyle = '#28282e'; ctx.fillRect(w * 0.2, 0, w * 0.6, h * 0.1);
             },
 
             drawKokushibo(ctx, b) {
+                const anim = spriteAnimators.kokushibo;
+                if (anim && anim.image) { anim.draw(ctx, 0, 0, Math.max(0.8, b.w / anim.fw), false); return; }
                 const w = b.w, h = b.h;
-                // Kimono
+
                 ctx.fillStyle = '#4a148c'; ctx.fillRect(0, h * 0.35, w, h * 0.65);
-                // Hair
+
                 ctx.fillStyle = '#1a1a1a';
-                ctx.fillRect(0, 0, w, h * 0.3); // Main hair
-                ctx.fillRect(w * 0.8, h * 0.2, w * 0.2, h * 0.6); // Ponytail
-                // Skin
+                ctx.fillRect(0, 0, w, h * 0.3);
+                ctx.fillRect(w * 0.8, h * 0.2, w * 0.2, h * 0.6);
+
                 ctx.fillStyle = '#f2d3b8'; ctx.fillRect(w * 0.2, h * 0.05, w * 0.6, h * 0.3);
-                // Eyes (6 of them)
+
                 ctx.fillStyle = '#ff1744';
                 ctx.fillRect(w * 0.25, h * 0.15, w * 0.1, h * 0.04);
                 ctx.fillRect(w * 0.45, h * 0.15, w * 0.1, h * 0.04);
@@ -869,21 +1088,39 @@
                     isDashing: false, dashTimer: 0, dashCooldown: 0, isParrying: false, parryTimer: 0, parryCooldown: 0,
                     invulnerableTimer: 0, hp: this.baseStats.maxHp, focus: this.baseStats.maxFocus, currentStyle: 0,
                     skills: [
-                        { // Water Breathing
+                        {
                             'F': { cooldown: 0, maxCooldown: 1.0, cost: 0 }, 'X': { cooldown: 0, maxCooldown: 0.3, cost: 0 },
                             '1': { cooldown: 0, maxCooldown: 2, cost: 20 }, '2': { cooldown: 0, maxCooldown: 4, cost: 35 },
                             '3': { cooldown: 0, maxCooldown: 8, cost: 50 },
                         },
-                        { // Hinokami Kagura
+                        {
                             'F': { cooldown: 0, maxCooldown: 1.0, cost: 0 }, 'X': { cooldown: 0, maxCooldown: 0.4, cost: 5 },
                             '1': { cooldown: 0, maxCooldown: 3, cost: 30 }, '2': { cooldown: 0, maxCooldown: 6, cost: 45 },
                             '3': { cooldown: 0, maxCooldown: 10, cost: 70 },
                         }
+                        ,
+                        {
+                            'F': { cooldown: 0, maxCooldown: 0.9, cost: 0 }, 'X': { cooldown: 0, maxCooldown: 0.35, cost: 0 },
+                            '1': { cooldown: 0, maxCooldown: 2.5, cost: 25 }, '2': { cooldown: 0, maxCooldown: 5, cost: 40 },
+                            '3': { cooldown: 0, maxCooldown: 9, cost: 65 },
+                        },
+                        {
+                            'F': { cooldown: 0, maxCooldown: 1.2, cost: 0 }, 'X': { cooldown: 0, maxCooldown: 0.5, cost: 0 },
+                            '1': { cooldown: 0, maxCooldown: 3.5, cost: 30 }, '2': { cooldown: 0, maxCooldown: 6, cost: 45 },
+                            '3': { cooldown: 0, maxCooldown: 12, cost: 80 },
+                        }
                     ],
-                    activeAttack: null
+                    activeAttack: null,
+
+                    breathing: { style: 'Water', timer: 0, period: 1000, strength: 1 }
                 });
             }
             update(dt, level) {
+
+                if (!this.breathing) this.breathing = { style: 'Water', timer: 0, period: 1000, strength: 1 };
+                this.breathing.timer += dt * 1000;
+                if (this.breathing.timer > this.breathing.period) this.breathing.timer -= this.breathing.period;
+
                 ['dashCooldown', 'invulnerableTimer', 'parryCooldown'].forEach(t => { if (this[t] > 0) this[t] -= dt; });
                 this.skills.forEach(style => Object.values(style).forEach(s => { if (s.cooldown > 0) s.cooldown -= dt; }));
                 this.focus = Math.min(this.maxFocus, this.focus + 15 * dt);
@@ -936,48 +1173,122 @@
                     return;
                 }
                 this.activeAttack = { key, timer: 0, intervalId: null, isForcedDash: false };
-                if (this.currentStyle === 0) { // Water Breathing
+                if (this.currentStyle === 0) {
                     audio.playSound('skill_water');
                     if (key === 'X') {
-                        this.activeAttack.timer = 0.25; const hX = this.x + (this.facing > 0 ? this.w : -48); game.checkPlayerAttack(hX, this.y, 48, this.h, 5);
+                        this.activeAttack.timer = 0.25;
+                        const hX = this.x + (this.facing > 0 ? this.w : -48);
+                        game.checkPlayerAttack(hX, this.y, 48, this.h, 5);
+
+                        for (let i = 0; i < 2; i++) {
+                            const offset = (i === 0) ? 12 : 28;
+                            const proj = projectilePool.get();
+                            if (proj) proj.activate(hX + (this.facing > 0 ? offset : -offset), this.y + this.h / 2, this.facing > 0 ? -0.2 + i * 0.15 : Math.PI + 0.2 - i * 0.15, 420, 6, '#58b1e0', 0.9, true);
+                        }
                         for (let i = 0; i < 3; i++) setTimeout(() => particleManager.spawn({ x: hX + (this.facing * i * 15), y: this.y + this.h / 2, count: 3, color: '#58b1e0', speed: 50, size: 3, lifetime: 0.3, angle: this.facing > 0 ? 0 : Math.PI, spread: 0.5, glow: true }), i * 50);
                     } else if (key === '1') {
-                        this.activeAttack.timer = 0.5; const hX = this.x + (this.facing > 0 ? this.w : -120); game.checkPlayerAttack(hX, this.y - 10, 120, this.h + 20, 15);
+                        this.activeAttack.timer = 0.6;
+                        const hX = this.x + (this.facing > 0 ? this.w : -120);
+                        game.checkPlayerAttack(hX, this.y - 10, 120, this.h + 20, 18);
                         particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 30, color: '#42a5f5', speed: [100, 200], size: [2, 5], lifetime: 0.6, angle: this.facing > 0 ? 0 : Math.PI, spread: Math.PI / 4, glow: true });
+
+                        for (let i = -2; i <= 2; i++) {
+                            const proj = projectilePool.get();
+                            if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, (this.facing > 0 ? 0 : Math.PI) + i * 0.15, 500, 10, '#4fc3f7', 1.2, true);
+                        }
                     } else if (key === '2') {
-                        this.activeAttack.timer = 0.4; this.vy = -200; this.vx = this.facing * 150;
+                        this.activeAttack.timer = 0.5; this.vy = -200; this.vx = this.facing * 150;
+
                         this.activeAttack.intervalId = setInterval(() => {
-                            if (!this.activeAttack) return; game.checkPlayerAttack(this.x - 30, this.y - 30, this.w + 60, this.h + 60, 8);
-                            particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 10, color: '#42a5f5', speed: 150, size: 4, lifetime: 0.4, glow: true });
-                        }, 50);
+                            if (!this.activeAttack) return;
+                            game.checkPlayerAttack(this.x - 30, this.y - 30, this.w + 60, this.h + 60, 8);
+                            particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 8, color: '#42a5f5', speed: 150, size: 4, lifetime: 0.4, glow: true });
+
+                            const proj = projectilePool.get();
+                            if (proj) proj.activate(this.x + this.w / 2, this.y + this.h / 2, Math.PI / 2 + (this.facing > 0 ? -0.3 : 0.3), 360, 9, '#42a5f5', 1.0, false);
+                        }, 60);
                     } else if (key === '3') {
-                        this.activeAttack.timer = 0.5; this.activeAttack.isForcedDash = true; this.isDashing = true; this.vx = this.facing * 400;
+                        this.activeAttack.timer = 0.6; this.activeAttack.isForcedDash = true; this.isDashing = true; this.vx = this.facing * 420;
                         this.activeAttack.intervalId = setInterval(() => {
                             if (!this.activeAttack) return; game.checkPlayerAttack(this.x, this.y, this.w, this.h, 12);
-                            particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 15, color: '#1e88e5', speed: 200, size: 5, lifetime: 0.5, angle: this.facing > 0 ? Math.PI : 0, spread: Math.PI / 2, glow: true });
+                            particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 15, color: '#1e88e5', speed: 220, size: 5, lifetime: 0.5, angle: this.facing > 0 ? Math.PI : 0, spread: Math.PI / 2, glow: true });
+
+                            const proj = projectilePool.get(); if (proj) proj.activate(this.x + (this.facing > 0 ? this.w : -20), this.y + this.h / 2, this.facing > 0 ? 0 : Math.PI, 480, 14, '#1e88e5', 1.1, true);
                         }, 40);
                     }
                 }
-                else if (this.currentStyle === 1) { // Hinokami Kagura
+                else if (this.currentStyle === 1) {
                     audio.playSound('skill_fire');
                     if (key === 'X') {
-                        this.activeAttack.timer = 0.3; const hX = this.x + (this.facing > 0 ? this.w : -56); game.checkPlayerAttack(hX, this.y, 56, this.h, 8);
-                        particleManager.spawn({ x: hX + (this.facing * 28), y: this.y + this.h / 2, count: 10, color: '#ff7043', speed: 80, size: 5, lifetime: 0.4, angle: this.facing > 0 ? 0 : Math.PI, spread: 0.6, glow: true });
+                        this.activeAttack.timer = 0.3;
+                        const hX = this.x + (this.facing > 0 ? this.w : -56);
+                        game.checkPlayerAttack(hX, this.y, 56, this.h, 8);
+                        particleManager.spawn({ x: hX + (this.facing * 28), y: this.y + this.h / 2, count: 12, color: '#ff7043', speed: 100, size: 6, lifetime: 0.45, angle: this.facing > 0 ? 0 : Math.PI, spread: 0.6, glow: true });
+
+                        const proj = projectilePool.get(); if (proj) proj.activate(hX + (this.facing > 0 ? 16 : -16), this.y + this.h / 2, this.facing > 0 ? 0 : Math.PI, 520, 12, '#ff8a50', 1.0, true);
                     } else if (key === '1') {
-                        this.activeAttack.timer = 0.2; game.checkPlayerAttack(this.x - 80, this.y - 80, this.w + 160, this.h + 160, 20); screenEffects.shake(0.2, 8);
-                        particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 60, color: '#ff5722', speed: 300, size: 8, lifetime: 1.0, glow: true });
+                        this.activeAttack.timer = 0.25;
+                        game.checkPlayerAttack(this.x - 80, this.y - 80, this.w + 160, this.h + 160, 22); screenEffects.shake(0.25, 10);
+                        particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 80, color: '#ff5722', speed: 340, size: 8, lifetime: 1.1, glow: true });
+
+                        for (let i = 0; i < 10; i++) {
+                            const a = (i / 10) * Math.PI * 2;
+                            const p = projectilePool.get(); if (p) p.activate(this.x + this.w / 2, this.y + this.h / 2, a, 420, 14, '#ff7043', 1.4, true);
+                        }
                     } else if (key === '2') {
                         this.activeAttack.timer = 1.0; this.vy = -this.jumpForce; this.jumpCount = 1; setTimeout(() => { this.vy = 1200; }, 150);
                         this.activeAttack.intervalId = setInterval(() => {
-                            if (!this.activeAttack || this.onGround) { this.endAttack(); return; } game.checkPlayerAttack(this.x - 20, this.y, this.w + 40, this.h + 20, 15);
+                            if (!this.activeAttack || this.onGround) { this.endAttack(); return; }
+                            game.checkPlayerAttack(this.x - 20, this.y, this.w + 40, this.h + 20, 15);
                             particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h, count: 8, color: '#f4511e', speed: 100, size: 6, lifetime: 0.5, angle: Math.PI / 2, spread: Math.PI / 3, glow: true });
-                        }, 30);
+
+                            const fp = projectilePool.get(); if (fp) fp.activate(this.x + this.w / 2, this.y + this.h / 2, this.facing > 0 ? 0 : Math.PI, 480, 16, '#ff6e40', 1.0, false);
+                        }, 35);
                     } else if (key === '3') {
                         this.activeAttack.timer = 1.0; this.invulnerableTimer = 1.0;
-                        particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 100, color: '#bf360c', speed: 400, size: [4, 10], lifetime: 1.2, gravity: 200, glow: true });
+                        particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 120, color: '#bf360c', speed: 420, size: [4, 12], lifetime: 1.2, gravity: 200, glow: true });
                         setTimeout(() => {
-                            if (!this.activeAttack) return; game.checkPlayerAttack(this.x - 200, this.y - 200, this.w + 400, this.h + 400, 50); screenEffects.shake(0.5, 20);
+                            if (!this.activeAttack) return; game.checkPlayerAttack(this.x - 200, this.y - 200, this.w + 400, this.h + 400, 50); screenEffects.shake(0.6, 22);
+
+                            for (let i = 0; i < 12; i++) {
+                                const a = (i / 12) * Math.PI * 2;
+                                const bp = projectilePool.get(); if (bp) bp.activate(this.x + this.w / 2, this.y + this.h / 2, a, 520, 18, '#ff7043', 1.4, true);
+                            }
                         }, 500);
+                    }
+                }
+                else if (this.currentStyle === 2) {
+                    audio.playSound('skill_wind');
+                    if (key === 'X') {
+                        this.activeAttack.timer = 0.25; const hX = this.x + (this.facing > 0 ? this.w : -64); game.checkPlayerAttack(hX, this.y, 64, this.h, 7);
+                        particleManager.spawn({ x: hX, y: this.y + this.h / 2, count: 15, color: '#c8fdff', speed: 260, size: 4, lifetime: 0.45, angle: this.facing > 0 ? 0 : Math.PI, spread: 0.4, glow: true });
+                    } else if (key === '1') {
+                        this.activeAttack.timer = 0.6; const hX = this.x + (this.facing > 0 ? this.w : -200); game.checkPlayerAttack(hX, this.y - 20, 200, this.h + 40, 18);
+
+                        for (let i = 0; i < 30; i++) setTimeout(() => particleManager.spawn({ x: this.x + this.w / 2 + (Math.random() - 0.5) * 30, y: this.y + this.h / 2 + (Math.random() - 0.5) * 30, count: 1, color: '#c8fdff', speed: 200, size: 4, lifetime: 0.6, glow: true }), i * 12);
+                    } else if (key === '2') {
+                        this.activeAttack.timer = 0.8; this.vy = -250; this.vx = this.facing * 180;
+                        this.activeAttack.intervalId = setInterval(() => { if (!this.activeAttack) return; game.checkPlayerAttack(this.x - 20, this.y - 20, this.w + 40, this.h + 20, 10); particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 6, color: '#c8fdff', speed: 120, size: 4, lifetime: 0.35, glow: true }); }, 60);
+                    } else if (key === '3') {
+                        this.activeAttack.timer = 0.9; this.invulnerableTimer = 0.8; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 80, color: '#bfefff', speed: 300, size: [3, 7], lifetime: 0.8, glow: true });
+                        setTimeout(() => { if (!this.activeAttack) return; game.checkPlayerAttack(this.x - 220, this.y - 220, this.w + 440, this.h + 440, 40); screenEffects.shake(0.4, 10); }, 400);
+                    }
+                }
+                else if (this.currentStyle === 3) {
+                    audio.playSound('skill_stone');
+                    if (key === 'X') {
+                        this.activeAttack.timer = 0.35; const hX = this.x + (this.facing > 0 ? this.w : -64); game.checkPlayerAttack(hX, this.y, 64, this.h, 10);
+                        particleManager.spawn({ x: hX, y: this.y + this.h / 2, count: 12, color: '#c6b89f', speed: 120, size: 6, lifetime: 0.6, gravity: 200, glow: false });
+                    } else if (key === '1') {
+                        this.activeAttack.timer = 0.5;
+                        const slamX = this.x + (this.facing > 0 ? this.w / 2 : -this.w / 2);
+                        particleManager.spawn({ x: slamX, y: this.y + this.h, count: 60, color: '#a1887f', speed: 320, size: 8, lifetime: 1.2, glow: false });
+                        setTimeout(() => { game.checkPlayerAttack(slamX - 180, this.y - 40, 360, this.h + 80, 30); screenEffects.shake(0.5, 14); }, 120);
+                    } else if (key === '2') {
+                        this.activeAttack.timer = 0.8; this.vy = -200; this.vx = this.facing * 120; this.activeAttack.intervalId = setInterval(() => { if (!this.activeAttack) return; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h, count: 6, color: '#bdb2a7', speed: 80, size: 6, lifetime: 0.5, gravity: 300 }); game.checkPlayerAttack(this.x - 10, this.y, this.w + 20, this.h + 10, 12); }, 80);
+                    } else if (key === '3') {
+                        this.activeAttack.timer = 1.0; this.invulnerableTimer = 0.6; particleManager.spawn({ x: this.x + this.w / 2, y: this.y + this.h / 2, count: 120, color: '#8d6e63', speed: 500, size: [6, 12], lifetime: 1.6, gravity: 400 });
+                        setTimeout(() => { game.checkPlayerAttack(this.x - 260, this.y - 260, this.w + 520, this.h + 520, 60); screenEffects.shake(0.8, 22); }, 600);
                     }
                 }
             }
@@ -1016,6 +1327,24 @@
             }
             draw(ctx) {
                 if (this.invulnerableTimer > 0 && Math.floor(this.invulnerableTimer * 10) % 2 === 0) return;
+
+
+                const cx = this.x + this.w / 2;
+                const cy = this.y + this.h / 2;
+                const t = (this.breathing && this.breathing.period) ? (this.breathing.timer / this.breathing.period) : 0;
+                const pulse = 0.6 + 0.4 * Math.sin(t * Math.PI * 2);
+                const styleIdx = this.currentStyle || 0;
+                if (styleIdx === 0) {
+
+                    const grd = ctx.createRadialGradient(cx, cy, 4, cx, cy, 100 * pulse);
+                    grd.addColorStop(0, `rgba(66,165,245,${0.25 * pulse})`);
+                    grd.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.save(); ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(cx, cy, 80 * pulse, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+                } else {
+
+                    ctx.save(); ctx.fillStyle = `rgba(255,112,67,${0.18 * pulse})`; ctx.beginPath(); ctx.ellipse(cx, cy, 70 * pulse, 36 * pulse, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+                }
+
 
                 ctx.save();
                 if (this.facing < 0) {
@@ -1058,6 +1387,13 @@
                 } else {
                     ctx.translate(this.x, this.y);
                 }
+
+
+                ctx.save();
+                if (this.spriteKey === 'giyu') { ctx.fillStyle = 'rgba(79,193,247,0.12)'; ctx.beginPath(); ctx.ellipse(this.w / 2, this.h / 2, this.w * 1.4, this.h * 0.9, 0, 0, Math.PI * 2); ctx.fill(); }
+                if (this.spriteKey === 'shinobu') { ctx.fillStyle = 'rgba(171,71,188,0.12)'; ctx.beginPath(); ctx.ellipse(this.w / 2, this.h / 2, this.w * 1.4, this.h * 0.9, 0, 0, Math.PI * 2); ctx.fill(); }
+                if (this.spriteKey === 'gyomei') { ctx.fillStyle = 'rgba(161,136,127,0.12)'; ctx.beginPath(); ctx.ellipse(this.w / 2, this.h / 2, this.w * 1.6, this.h * 1.0, 0, 0, Math.PI * 2); ctx.fill(); }
+                ctx.restore();
 
                 switch (this.spriteKey) {
                     case 'giyu': spriteRenderer.drawGiyu(ctx, this); break;
@@ -1125,6 +1461,19 @@
             }
         }
 
+        // --- HashiraManager (registers assist behavior and visuals)
+        const HashiraManager = {
+            registry: {},
+            register(key, cfg) { this.registry[key] = cfg; },
+            assist(key) { const cfg = this.registry[key]; if (cfg && cfg.assist) cfg.assist(); }
+        };
+
+        // --- Cutscene manager (simple scripted scenes)
+        const CutsceneManager = {
+            active: false, queue: [], start(seq) { this.queue = seq; this.active = true; this.index = 0; this.next(); },
+            next() { if (this.index >= this.queue.length) { this.active = false; return; } const s = this.queue[this.index++]; dialogueManager.start([{ speaker: s.speaker, text: s.text }]); }
+        };
+
         // ##################################################################
         // #                            BOSSES                            #
         // ##################################################################
@@ -1164,9 +1513,13 @@
             draw(ctx) {
                 if (!this.active) return;
                 if (this.invulnerableTimer > 0 && Math.floor(this.invulnerableTimer * 20) % 2 === 0) return;
-
                 ctx.save();
-                if (this.state === 'telegraph') { ctx.globalAlpha = 0.5 + Math.sin(performance.now() / 100) * 0.5; }
+
+                if (this.state === 'telegraph') {
+                    const progress = Math.min(1, Math.max(0, 1 - (this.timer / 2)));
+                    drawTelegraphRing(ctx, this.x + this.w / 2, this.y + this.h / 2, Math.max(this.w, this.h) * 1.4, this.particleColor || '#fff', progress);
+                    ctx.globalAlpha = 0.5 + Math.sin(performance.now() / 100) * 0.5;
+                }
                 if (this.poisonTimer > 0) { ctx.filter = 'sepia(100%) hue-rotate(240deg) saturate(3)'; }
 
                 ctx.save();
@@ -1218,7 +1571,7 @@
             iceClone() { this.state = 'telegraph'; this.timer = 0.8; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 2.0; const proj = projectilePool.get(); if (proj) proj.activate(this.x - 100, this.y, 0, 0, 15, '#a0d2eb', 3.0, false, true); } }, 800); }
             freezingCloud() { this.state = 'telegraph'; this.timer = 1.5; setTimeout(() => { if (this.hp > 0 && this.active) { this.state = 'idle'; this.timer = 3.0; screenEffects.shake(0.4, 10); particleManager.spawn({ x: GAME_WIDTH / 2, y: 600, count: 200, color: '#e0f7fa', speed: 50, size: 8, lifetime: 3, angle: -Math.PI / 2, spread: Math.PI / 4, gravity: -100, glow: true }); const attackInterval = setInterval(() => { if (!this.active || game.player.hp <= 0) { clearInterval(attackInterval); return; } if (game.player.onGround && game.currentRoom === this.room) game.player.takeDamage(5); }, 200); setTimeout(() => clearInterval(attackInterval), 3000); } }, 1500); }
         }
-        // CLASS KOKUSHIBO - FULLY REWRITTEN FOR STABILITY
+
         class Kokushibo extends Boss {
             constructor(x, y) {
                 super({
@@ -1254,10 +1607,10 @@
             }
 
             chooseAction(player) {
-                // Prevent action selection if we're locked in an attack
+
                 if (this.attackLock) return;
 
-                // Add cooldown between attacks
+
                 const currentTime = performance.now();
                 if (currentTime - this.lastAttackTime < 1000) return;
 
@@ -1278,7 +1631,7 @@
                 }
             }
 
-            // Safe attack execution helper
+
             safeExecuteAttack(attackFunction, duration) {
                 if (this.attackLock || !this.active || this.hp <= 0) return;
 
@@ -1292,7 +1645,7 @@
                     this.attackLock = false;
                 }
 
-                // Unlock after duration, but keep track of the timer so it can be cleared if needed
+
                 if (!this._timers) this._timers = [];
                 const unlockId = setTimeout(() => {
                     this.attackLock = false;
@@ -1301,7 +1654,7 @@
                 this._timers.push(unlockId);
             }
 
-            // Helper wrappers that track timeouts/intervals so they can be cleared on reset
+
             scheduleTimeout(fn, delay) {
                 if (!this._timers) this._timers = [];
                 const id = setTimeout(() => {
@@ -1321,7 +1674,7 @@
                 return id;
             }
 
-            // Clear any scheduled timers when resetting
+
             reset() {
                 if (this._timers) {
                     this._timers.forEach(id => { try { clearTimeout(id); clearInterval(id); } catch (e) { } });
@@ -1329,12 +1682,12 @@
                 }
                 this.attackLock = false;
                 this.lastAttackTime = 0;
-                // call base reset behavior
+
                 super.reset();
             }
 
-            // The following methods no longer accept a 'p' parameter.
-            // They now safely get the player's current data from the global 'game' object inside the timeout.
+
+
             teleport() {
                 this.safeExecuteAttack(() => {
                     this.state = 'telegraph';
@@ -1509,11 +1862,11 @@
 
                 if (this.collidesWith(game.player)) {
                     game.player.takeDamage(this.damage);
-                    this.active = false; // Deactivate on hit
+                    this.active = false;
                 }
 
                 if (this.isDead()) {
-                    this.active = false; // Deactivate when lifetime ends
+                    this.active = false;
                 }
             }
             isDead() { return this.age >= this.lifetime; }
@@ -1525,6 +1878,14 @@
             draw(ctx) {
                 if (!this.active) return;
                 ctx.save();
+
+                const trailLength = Math.min(6, Math.floor((this.lifetime - this.age) * 10));
+                ctx.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < 3; i++) {
+                    const a = Math.max(0, 0.15 - i * 0.04) * (1 - (this.age / Math.max(0.0001, this.lifetime)));
+                    ctx.fillStyle = this.color.replace(')', `, ${a})`).replace('rgb', 'rgba');
+                    ctx.beginPath(); ctx.arc(this.x - this.vx * i * 0.02, this.y - this.vy * i * 0.02, 8 - i * 2, 0, Math.PI * 2); ctx.fill();
+                }
                 ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillStyle = this.color;
 
                 if (this.isClone) {
@@ -1560,7 +1921,7 @@
                         return this.pool[i];
                     }
                 }
-                // If pool is full, recycle the oldest active projectile to avoid returning null
+
                 let oldestIndex = 0;
                 let oldestAge = -1;
                 for (let i = 0; i < this.maxSize; i++) {
@@ -1571,7 +1932,7 @@
                 }
                 console.warn("Projectile pool full — recycling oldest projectile.");
                 const p = this.pool[oldestIndex];
-                p.active = false; // deactivate so activate() can reinitialize
+                p.active = false;
                 return p;
             }
         };
@@ -1582,7 +1943,16 @@
         const game = {
             state: 'start', player: new Player(150, 500), camera: new Camera(GAME_WIDTH, GAME_HEIGHT),
             rooms: [], currentRoomIndex: 0, hitStop: 0, bossesDefeated: 0,
+            timeScale: 1.0,
+            colliders: [],
             init() {
+
+                const save = SaveManager.load();
+                if (save && save.unlockedStyles) {
+                    this.player = new Player(150, 500);
+                    this.player.unlockedStyles = save.unlockedStyles;
+                    this.player.currentStyle = save.currentStyle || 0;
+                }
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 1280, 70), new Tile(400, 500, 150, 20), new Tile(700, 400, 150, 20), new Tile(100, 300, 200, 20),], doors: [new Door(1200, 550, 80, 100, 1, 100, 550)], }));
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 400, 70), new Tile(880, 650, 400, 70), new Tile(400, 650, 480, 16, 'spike'), new Tile(600, 500, 80, 20, 'moving_h'), new Tile(300, 350, 150, 20), new Tile(850, 350, 150, 20), new Tile(0, 0, 20, 720), new Tile(1260, 0, 20, 720),], doors: [new Door(0, 550, 80, 100, 0, 1100, 550), new Door(1200, 250, 80, 100, 2, 100, 550),], healingOrbs: [new HealingOrb(620, 450)] }));
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 1280, 70), new Tile(0, 0, 20, 720), new Tile(1260, 0, 20, 720),], doors: [new Door(0, 550, 80, 100, 1, 1100, 250), new Door(1200, 550, 80, 100, 3, 100, 550, () => game.bossesDefeated < 1)], bosses: [new Akaza(900, 570)], hashira: new Giyu(200, 590) }));
@@ -1592,12 +1962,19 @@
                 this.rooms.push(new Room({ w: 1280, h: 720, tiles: [new Tile(0, 650, 1280, 70), new Tile(0, 0, 20, 720), new Tile(1260, 0, 20, 720),], bosses: [new Kokushibo(900, 560)], hashira: new Gyomei(200, 580) }));
                 this.currentRoom = this.rooms[this.currentRoomIndex];
                 projectilePool.init();
+
+                HashiraManager.register('giyu', { assist: () => { particleManager.spawn({ x: game.player.x, y: game.player.y, count: 80, color: '#4fc3f7', speed: 240, size: 6, lifetime: 1.2, glow: true }); game.checkHashiraAttack(game.player.x - 80, game.player.y - 40, 160, game.player.h + 60, 18, '#4fc3f7'); } });
+                HashiraManager.register('shinobu', { assist: () => { particleManager.spawn({ x: game.player.x + 40, y: game.player.y, count: 60, color: '#ab47bc', speed: 180, size: 5, lifetime: 1.0, glow: true }); game.checkHashiraAttack(game.player.x - 40, game.player.y - 40, 120, game.player.h + 60, 12, '#ab47bc'); } });
+                HashiraManager.register('gyomei', { assist: () => { particleManager.spawn({ x: game.player.x, y: game.player.y + 40, count: 100, color: '#a1887f', speed: 320, size: 8, lifetime: 1.4, glow: false }); game.checkHashiraAttack(game.player.x - 160, game.player.y - 60, 320, game.player.h + 120, 28, '#a1887f'); } });
             },
             reset() {
                 this.player.reset(150, 500); this.rooms.forEach(r => r.reset());
                 projectilePool.pool.forEach(p => p.active = false);
                 this.currentRoomIndex = 0;
                 this.currentRoom = this.rooms[0]; this.bossesDefeated = 0;
+
+                this.colliders.length = 0;
+                this.timeScale = 1.0;
             },
             setState(newState) {
                 if (newState === 'gameOver' || newState === 'victory') {
@@ -1634,7 +2011,10 @@
             },
             update(dt) {
                 if (this.state === 'dialogue') { dialogueManager.update(dt); return; }
+                if (this.state === 'paused') return;
                 if (this.hitStop > 0) { this.hitStop -= dt; return; }
+
+                dt *= this.timeScale;
                 try {
                     this.player.update(dt, this.currentRoom);
                 } catch (e) {
@@ -1645,9 +2025,16 @@
                 } catch (e) {
                     console.error('Error updating currentRoom', e);
                 }
+
+                try {
+                    for (const k in spriteAnimators) {
+                        const a = spriteAnimators[k]; if (a && typeof a.update === 'function') a.update(dt);
+                    }
+                } catch (e) { console.error('Animator update error', e); }
                 this.camera.follow(this.player, this.currentRoom);
                 particleManager.update(dt);
                 screenEffects.update(dt);
+                perfOverlay.update();
                 for (let i = 0; i < projectilePool.pool.length; i++) {
                     const p = projectilePool.pool[i];
                     if (!p || !p.active) continue;
@@ -1657,6 +2044,21 @@
                         console.error('Projectile update error', err);
                         p.active = false;
                     }
+                }
+
+
+                for (let i = this.colliders.length - 1; i >= 0; i--) {
+                    const c = this.colliders[i];
+                    c.life -= dt;
+                    if (c.life <= 0) { this.colliders.splice(i, 1); continue; }
+
+                    this.currentRoom.bosses.forEach(b => {
+                        if (!b.active) return;
+                        if (c.x < b.x + b.w && c.x + c.w > b.x && c.y < b.y + b.h && c.y + c.h > b.y) {
+                            b.takeDamage(c.damage);
+                            if (c.once) c.life = 0;
+                        }
+                    });
                 }
 
                 for (let i = this.currentRoom.healingOrbs.length - 1; i >= 0; i--) {
@@ -1708,6 +2110,8 @@
                 particleManager.draw(ctx);
                 this.camera.release(ctx);
                 this.updateUI();
+
+                perfOverlay.draw(ctx);
             },
             updateUI() {
                 document.getElementById('hp-bar-inner').style.width = `${Math.max(0, this.player.hp / this.player.maxHp * 100)}%`;
@@ -1759,7 +2163,7 @@
             } catch (err) {
                 console.error('Unhandled error in main loop:', err);
                 try {
-                    // Attempt to neutralize current boss to prevent repeated crashes
+
                     const activeBoss = game.currentRoom && game.currentRoom.getActiveBoss && game.currentRoom.getActiveBoss();
                     if (activeBoss) {
                         console.warn('Deactivating boss to recover from error:', activeBoss.name);
@@ -1770,7 +2174,7 @@
             gameLoopId = requestAnimationFrame(loop);
         }
 
-        // Global error handlers to capture uncaught exceptions and promise rejections
+
         window.addEventListener('error', (e) => {
             console.error('Global error captured:', e.error || e.message, e.error && e.error.stack);
         });
@@ -1804,9 +2208,166 @@
             }
         });
 
+
+        window.addEventListener('keydown', (e) => {
+            const isSpace = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
+            if (!isSpace) return;
+
+            try { e.preventDefault(); } catch (err) { }
+            const ss = document.getElementById('start-screen');
+            const go = document.getElementById('game-over-screen');
+            const vs = document.getElementById('victory-screen');
+
+            console.log('Space pressed: ss.display=', ss.style.display, 'assetDone=', assetManager.isDone(), 'gameLoopId=', !!gameLoopId);
+            if ((ss.style.display !== 'none' || ss.style.display === '') && assetManager.isDone() && !gameLoopId) {
+                audio.init(); game.reset(); game.setState('playing'); lastTime = performance.now(); gameLoopId = requestAnimationFrame(loop);
+                return;
+            }
+            if (go.style.display !== 'none' && !gameLoopId) {
+                game.reset(); game.setState('playing'); lastTime = performance.now(); gameLoopId = requestAnimationFrame(loop);
+                return;
+            }
+            if (vs.style.display !== 'none' && !gameLoopId) {
+                game.reset(); game.setState('playing'); lastTime = performance.now(); gameLoopId = requestAnimationFrame(loop);
+                return;
+            }
+        });
+
         // --- GAME START SEQUENCE ---
+
+        function generateSpriteSheets() {
+
+            function makeSheet(name, cellW, cellH, cols, rows, drawCell) {
+                const c = document.createElement('canvas');
+                c.width = cellW * cols; c.height = cellH * rows;
+                const g = c.getContext('2d');
+
+                g.clearRect(0, 0, c.width, c.height);
+                for (let y = 0; y < rows; y++) {
+                    for (let x = 0; x < cols; x++) {
+                        g.save();
+                        g.translate(x * cellW, y * cellH);
+                        drawCell(g, x, y, cellW, cellH);
+                        g.restore();
+                    }
+                }
+                const img = new Image(); img.src = c.toDataURL();
+                assetManager.images[name] = img;
+            }
+
+
+            makeSheet('tanjiro', 64, 64, 5, 1, (g, cx, cy, w, h) => {
+
+                g.clearRect(0, 0, w, h);
+
+                g.fillStyle = '#1f1f24'; g.fillRect(w * 0.25, h * 0.32, w * 0.5, h * 0.5);
+
+                g.fillStyle = '#2b7f7a'; g.fillRect(w * 0.15, h * 0.32, w * 0.7, h * 0.5);
+                g.fillStyle = '#143233';
+                for (let i = 0; i < 4; i++) { g.fillRect(w * 0.15 + i * w * 0.175, h * 0.33, w * 0.085, h * 0.46); }
+
+                g.fillStyle = '#f0d9bf'; g.beginPath(); g.ellipse(w * 0.5, h * 0.18, w * 0.22, h * 0.18, 0, 0, Math.PI * 2); g.fill();
+
+                g.fillStyle = '#120809'; g.fillRect(w * 0.12, h * 0.0, w * 0.76, h * 0.24);
+
+                g.fillStyle = '#fff'; g.fillRect(w * 0.4, h * 0.18, w * 0.06, h * 0.04); g.fillRect(w * 0.54, h * 0.18, w * 0.06, h * 0.04);
+
+                const frame = cx; const tilt = (frame - 2) * 0.04;
+                g.save(); g.translate(w * 0.5, h * 0.6); g.rotate(tilt); g.fillStyle = '#cfd8dc'; g.fillRect(-w * 0.02, -h * 0.05, w * 0.6, h * 0.06); g.restore();
+            });
+
+
+            makeSheet('hashira', 64, 72, 3, 1, (g, cx, cy, w, h) => {
+                g.clearRect(0, 0, w, h);
+
+                g.fillStyle = '#1f1f24'; g.fillRect(w * 0.2, h * 0.3, w * 0.6, h * 0.55);
+
+                g.fillStyle = '#f0d9bf'; g.beginPath(); g.ellipse(w * 0.5, h * 0.14, w * 0.22, h * 0.16, 0, 0, Math.PI * 2); g.fill();
+
+                if (cx === 0) {
+                    g.fillStyle = '#0d47a1'; g.fillRect(w * 0.25, h * 0.36, w * 0.5, h * 0.18);
+                } else if (cx === 1) {
+                    g.fillStyle = '#e1bee7'; g.fillRect(w * 0.25, h * 0.36, w * 0.5, h * 0.18); g.fillStyle = '#ab47bc'; g.beginPath(); g.moveTo(w * 0.5, h * 0.36); g.bezierCurveTo(w * 0.4, h * 0.28, w * 0.6, h * 0.28, w * 0.5, h * 0.36); g.fill();
+                } else {
+                    g.fillStyle = '#6d4c41'; for (let i = 0; i < 4; i++) g.beginPath(), g.arc(w * (0.3 + i * 0.1), h * 0.45, w * 0.04, 0, Math.PI * 2), g.fill();
+                }
+            });
+
+
+            makeSheet('bosses', 96, 96, 3, 1, (g, cx, cy, w, h) => {
+                g.clearRect(0, 0, w, h);
+
+                if (cx === 0) {
+                    g.fillStyle = '#f8bbd0'; g.fillRect(w * 0.15, h * 0.18, w * 0.7, h * 0.6);
+                    g.fillStyle = '#ff4081'; for (let i = 0; i < 4; i++) g.fillRect(w * (0.2 + i * 0.15), h * 0.22 + i * 6, w * 0.08, h * 0.08);
+                }
+
+                if (cx === 1) {
+                    g.fillStyle = '#fff3e0'; g.fillRect(w * 0.15, h * 0.18, w * 0.7, h * 0.6);
+                    g.fillStyle = '#b39ddb'; g.fillRect(w * 0.28, h * 0.3, w * 0.45, h * 0.2);
+                }
+
+                if (cx === 2) {
+                    g.fillStyle = '#ede7f6'; g.fillRect(w * 0.12, h * 0.18, w * 0.76, h * 0.64);
+                    g.fillStyle = '#6a1b9a'; g.fillRect(w * 0.12, h * 0.6, w * 0.76, h * 0.18);
+
+                    g.fillStyle = '#ff1744'; for (let i = 0; i < 6; i++) g.fillRect(w * 0.2 + (i % 3) * 0.18 * w, h * 0.26 + Math.floor(i / 3) * 0.08 * h, w * 0.06, h * 0.04);
+                }
+            });
+
+
+            makeSheet('tiles', 128, 128, 2, 1, (g, cx, cy, w, h) => {
+                g.clearRect(0, 0, w, h);
+                const grad = g.createLinearGradient(0, 0, w, h); grad.addColorStop(0, '#3a2b3b'); grad.addColorStop(1, '#201526'); g.fillStyle = grad; g.fillRect(0, 0, w, h);
+                g.fillStyle = '#5a5278'; g.fillRect(w * 0.05, h * 0.55, w * 0.9, h * 0.35);
+            });
+        }
+
+
+        assetManager.queueDownload('tanjiro', 'assets/tanjiro_sprites.png');
+        assetManager.queueDownload('hashira', 'assets/hashira_sprites.png');
+        assetManager.queueDownload('bosses', 'assets/boss_sprites.png');
+        assetManager.queueDownload('tiles', 'assets/bg_tiles.png');
+
         assetManager.downloadAll(() => {
             game.init();
+
+
+
+            try {
+                const tImg = assetManager.getAsset('tanjiro');
+                if (tImg) {
+                    spriteAnimators.tanjiro = new SpriteAnimator(tImg, 64, 64, {
+                        idle: { frames: [{ x: 0, y: 0, duration: 500 }] },
+                        run: { frames: [{ x: 1, y: 0, duration: 80 }, { x: 2, y: 0, duration: 80 }] },
+                        attack: { frames: [{ x: 3, y: 0, duration: 90 }, { x: 4, y: 0, duration: 90 }] }
+                    });
+                    spriteAnimators.tanjiro.play('idle', true);
+                }
+
+                const hImg = assetManager.getAsset('hashira');
+                if (hImg) {
+                    spriteAnimators.giyu = new SpriteAnimator(hImg, 48, 64, { idle: { frames: [{ x: 0, y: 0, duration: 500 }] } });
+                    spriteAnimators.giyu.play('idle', true);
+                    spriteAnimators.shinobu = new SpriteAnimator(hImg, 48, 64, { idle: { frames: [{ x: 1, y: 0, duration: 500 }] } });
+                    spriteAnimators.shinobu.play('idle', true);
+                    spriteAnimators.gyomei = new SpriteAnimator(hImg, 56, 72, { idle: { frames: [{ x: 2, y: 0, duration: 500 }] } });
+                    spriteAnimators.gyomei.play('idle', true);
+                }
+
+                const bImg = assetManager.getAsset('bosses');
+                if (bImg) {
+                    spriteAnimators.akaza = new SpriteAnimator(bImg, 64, 80, { idle: { frames: [{ x: 0, y: 0, duration: 500 }] } });
+                    spriteAnimators.akaza.play('idle', true);
+                    spriteAnimators.doma = new SpriteAnimator(bImg, 70, 85, { idle: { frames: [{ x: 1, y: 0, duration: 500 }] } });
+                    spriteAnimators.doma.play('idle', true);
+                    spriteAnimators.kokushibo = new SpriteAnimator(bImg, 60, 90, { idle: { frames: [{ x: 2, y: 0, duration: 500 }] } });
+                    spriteAnimators.kokushibo.play('idle', true);
+                }
+            } catch (e) {
+                console.warn('Sprite animator initialization failed:', e);
+            }
+
             game.setState('start');
         });
     </script>
